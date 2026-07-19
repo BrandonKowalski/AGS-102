@@ -14,11 +14,14 @@ Usage: mkgpt.py IMAGE TOTAL_SECTORS P5_SECTORS P6_SECTORS P7_SECTORS
 """
 import struct
 import sys
+import uuid
 import zlib
 
 SECTOR = 512
 NUM_ENTRIES = 8
 ENTRY_SIZE = 128
+PRIMARY_TYPE_GUID = uuid.UUID("ebd0a0a2-b9e5-4433-87c0-68b6b72699c7")
+PRIMARY_UNIQUE_GUID = uuid.UUID("07c2a8fa-761b-41cc-bc12-ca43eafb5ee5")
 
 
 def die(msg):
@@ -45,6 +48,17 @@ def main():
             die(f"unexpected entry table shape: {n_entries}x{esz}")
         f.seek(entries_lba * SECTOR)
         entries = [bytearray(f.read(ENTRY_SIZE)) for _ in range(NUM_ENTRIES)]
+
+        # StockMod BASE archives deliberately omit p8 and the backup GPT. The
+        # known-good H700 full-card layout uses this stable identity for the
+        # user-visible `primary` FAT partition; restore it only when slot 8 is
+        # completely empty. Full images retain their source entry unchanged.
+        if entries[7] == bytearray(ENTRY_SIZE):
+            entries[7][:16] = PRIMARY_TYPE_GUID.bytes_le
+            entries[7][16:32] = PRIMARY_UNIQUE_GUID.bytes_le
+            entries[7][56 : 56 + len("primary".encode("utf-16-le"))] = "primary".encode(
+                "utf-16-le"
+            )
 
         starts = [struct.unpack_from("<Q", e, 32)[0] for e in entries]
         names = [e[56:128].decode("utf-16-le").rstrip("\0") for e in entries]

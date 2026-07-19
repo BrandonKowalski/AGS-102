@@ -16,7 +16,7 @@
 | Bluetooth audio pairing end-to-end | ⏳ daemons run; not yet paired on base OS |
 | HDMI output | ⏳ not retested on base OS |
 | Exact deep-sleep standby µA (long sleep) | ⏳ counter too coarse for 35 min |
-| RG34XXSP / RG28XX / cube variants | ⏳ need per-device `boot-prefix` + `DEVICE=` |
+| Other StockMod H700 targets | 🧪 target-aware images generated/verified; BaseOS hardware validation pending |
 
 > **Standalone-repo changes not yet hardware-validated:** the split from NextUI moved
 > two responsibilities into Base OS — (a) the frontend payload is no longer baked in
@@ -67,8 +67,9 @@ superblock mount-counts, and `fbsplash` breadcrumbs as boot-stage forensics.
   with a checksum.
 - The repo shell is **fish**, which doesn't word-split variables — inline `ssh -o`
   options, never store them in a var.
-- The QEMU smoke test only exercises static busybox; **always chroot-test the harvest
-  on the real device** after manifest changes (caught the `ld-linux` interp symlink
+- The QEMU smoke test exercises generic userspace, not the vendor kernel or hardware.
+  During optional hardware validation, chroot-testing the harvest remains valuable
+  after manifest changes (it previously caught the `ld-linux` interpreter symlink
   and `bluetoothctl`'s libreadline/libtinfo gaps).
 - NextUI hook dirs (`run_hooks.sh`) only execute `*.sh` files.
 
@@ -78,26 +79,19 @@ superblock mount-counts, and `fbsplash` breadcrumbs as boot-stage forensics.
   `rcS` for power-loss resilience (writable state is already tmpfs + `/data` + FAT).
 - **HDMI + BT-audio** end-to-end validation on base OS.
 - **Long deep-sleep measurement** for a projected-standby-days figure.
-- **Other H700 variants** (RG34XXSP / RG28XX / cube): capture each device's
-  `boot-prefix.img` (DTB/panel differences live in p2/p4) and bake its `DEVICE=` /
-  model string into `/etc/baseos-release`.
-- **Clean harvest provenance.** The current harvest was captured from the maintainer's
-  stockmod RG40XXV; p5 libraries are believed stock-untouched (stockmod lives on
-  p6/p8), but importing from a clean official `RG40XXV-V1.1.1.0` archive would make the
-  provenance airtight.
+- **Other H700 variants.** The StockMod importer and device profiles now generate all
+  ten supported images with per-target boot partitions, model identity and logos.
+  Physical BaseOS validation beyond RG40XXV remains outstanding and must be recorded
+  per model rather than inferred from successful image construction.
 - **Silence boot breadcrumbs / release vs dev image split** (serial getty + dropbear
   are dev conveniences).
 - **PortMaster** later: the kernel already has squashfs + loop + overlay built in;
   glibc 2.35 and an `/etc/os-release` identity remain to be decided.
 
-## 5. Relationship to NextOS
+## 5. Relationship to frontends
 
-This base OS is the pragmatic v1 that proves the hardware contract and the tooling
-(GPT surgery, harvest closure, init design, boot splash, expand-to-fill) on real
-hardware, quickly. The fully-custom Buildroot **NextOS** plan (documented in the
-NextUI repo under `docs/custom-os/`, branch `h700-custom-linux`) is the longer arc;
-everything validated here — especially the boot-chain facts in
-[00](00-boot-chain-and-partitions.md) and the deep-sleep proof in
-[05](05-runtime-power-network.md) — de-risks it. Prior local experiments
-`~/Code/Me/tonky-os` (Buildroot + BSP-bundle) and `~/Code/Me/tonky-grok`
-(mainline-first) were surveyed; this base OS supersedes both as the working path.
+BaseOS owns the hardware contract and OS tooling: GPT surgery, harvest closure, init,
+boot splash and expand-to-fill. NextUI is the first-class initial frontend and the
+source of the compatibility model contract, but it is installed onto the completed
+card rather than embedded in this image. Other frontends can use the same small
+session hand-off without becoming BaseOS build dependencies.

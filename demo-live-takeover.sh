@@ -6,16 +6,18 @@
 # above the bootloader. Captures the framebuffer as proof, then reboots the
 # device back to its normal state.
 #
-# Usage: ./demo-live-takeover.sh <device-ip> [password]
+# Usage: ./demo-live-takeover.sh <target> <device-ip> [password]
 set -eu
 
-IP="${1:?usage: demo-live-takeover.sh <device-ip> [password]}"
-PW="${2:-root}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-WORK="$HERE/work"
+TARGET="${1:?usage: demo-live-takeover.sh <target> <device-ip> [password]}"
+IP="${2:?usage: demo-live-takeover.sh <target> <device-ip> [password]}"
+PW="${3:-root}"
+python3 "$HERE/tools/device_profile.py" shell "$TARGET" >/dev/null
+WORK="$HERE/work/$TARGET"
 SSH="sshpass -p $PW ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 root@$IP"
 
-[ -f "$WORK/rootfs.tar" ] || { echo "missing rootfs.tar"; exit 1; }
+[ -f "$WORK/rootfs.tar" ] || { echo "missing $WORK/rootfs.tar"; exit 1; }
 
 echo "== 1/5 push rootfs to device tmpfs"
 $SSH 'rm -rf /tmp/baseos && mkdir -p /tmp/baseos && tar -xf - -C /tmp/baseos' < "$WORK/rootfs.tar"

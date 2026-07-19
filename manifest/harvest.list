@@ -4,7 +4,7 @@
 # so list soname paths (what the dynamic linker/dlopen actually request),
 # not the fully-versioned real files.
 # Derived from the on-device ldd closure of every NextUI ELF + kept daemons
-# (2026-07-19, RG40XXV stock V1.1.1.0). See docs/h700-base-os/README.md.
+# (2026-07-19, RG40XXV stock V1.1.1.0). See docs/01-rootfs-and-init.md.
 
 ## dynamic linker + glibc
 /usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1
@@ -97,6 +97,8 @@
 /usr/bin/bluealsa-aplay
 /usr/bin/bluetoothctl
 /usr/bin/rtk_hciattach
+/usr/lib/ld-linux-armhf.so.3
+/usr/lib/arm-linux-gnueabihf/libc.so.6
 /usr/bin/dbus-daemon
 /usr/bin/dbus-uuidgen
 /usr/bin/dbus-send

@@ -1,5 +1,4 @@
-NAME="NextUI Base OS"
-ID=nextui-baseos
+NAME="Base OS"
+ID=baseos
 VERSION_ID=0.1
-PRETTY_NAME="NextUI Base OS 0.1 (h700)"
-HOME_URL="https://nextui.loveretro.games"
+PRETTY_NAME="Base OS 0.1 (h700)"

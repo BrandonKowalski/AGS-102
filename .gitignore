@@ -1,3 +1,5 @@
 work/
 .DS_Store
 *.o
+__pycache__/
+*.pyc

@@ -1,14 +1,18 @@
 # 00 — Boot chain & partitions (the immutable half)
 
-Everything in this file is what we **keep byte-for-byte** from the stock firmware.
-It is the part we cannot rebuild and the part that gives "perfect hardware support".
+Everything in this file comes from the target's prepared StockMod firmware image.
+It is the part we cannot rebuild and the part that gives "perfect hardware support";
+BaseOS keeps it byte-for-byte except for the bootlogo inside p2 and regenerated GPT
+metadata needed for the smaller output image.
 All facts verified live on the RG40XXV (stock firmware V1.1.1.0, kernel
 `4.9.170 #16 SMP PREEMPT` built 2026-05-21) on 2026-07-19.
 
 ## 1. GPT / partition layout
 
-The stock card is **GPT** (not MBR). Verified identical from the live device and from
-the captured `boot-prefix.img`:
+The stock card is **GPT** (not MBR). The RG40XXV StockMod `BASE` archive retains the
+same primary GPT and partitions 1–7, but deliberately ends after p7 with entry 8 empty
+and no backup GPT. `prepare-stock.sh` recognizes that exact compact form; image
+composition restores p8 and writes valid primary and backup GPTs:
 
 | # | name | start LBA | size (stock) | contents | our image |
 |---|---|---|---|---|---|
@@ -29,11 +33,13 @@ the captured `boot-prefix.img`:
   partition **names, order, and type/unique GUIDs must be preserved**, and **p5 must
   start at LBA 434176** (`root=/dev/mmcblk0p5` is hard-coded in the env). Sizes of
   p5–p8 are free to change.
-- The first **222,298,112 bytes** of the stock card (everything up to the start of
-  p5) are captured once as `boot-prefix.img` (sha256 `01efe95d…`, stored under
-  `~/Code/Me/tonky-os/dl/bsp/anbernic-rg40xxv/RG40XXV-V1.1.1.0-EN16GB-260521/`). Our
-  image starts as a verbatim copy of this, then both GPTs are regenerated for the
-  target size (see `tools/mkgpt.py` in [02](02-image-build-and-flash.md)).
+- `prepare-stock.sh` derives `boot-prefix.img` directly from the selected target's
+  StockMod `.img`, ending exactly at p5's start. The known RG40XXV layout makes this
+  **222,298,112 bytes**; other targets are read from their GPT rather than assuming
+  that value. The source name/hash, geometry, prefix hash and preserved-region hashes
+  are recorded in `work/<target>/source.json`. The image starts from this prefix,
+  then both GPTs are regenerated for the smaller target size (see
+  `tools/mkgpt.py` in [02](02-image-build-and-flash.md)).
 - `bootdelay=0` already, so there's no U-Boot key-press window to shave.
 
 ### The env partition (p3) cmdline

@@ -2,13 +2,17 @@
 # Post-flash functional validation for the base OS, run from the Mac against
 # a booted device (enable WiFi in NextUI settings first, or use serial).
 #
-# Usage: ./validate-on-device.sh <device-ip> [root-password]
+# Usage: ./validate-on-device.sh <target> <device-ip> [root-password]
 set -u
 
-IP="${1:?usage: validate-on-device.sh <device-ip> [password]}"
-PW="${2:-root}"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+TARGET="${1:?usage: validate-on-device.sh <target> <device-ip> [password]}"
+IP="${2:?usage: validate-on-device.sh <target> <device-ip> [password]}"
+PW="${3:-root}"
+eval "$(python3 "$HERE/tools/device_profile.py" shell "$TARGET")"
 
-sshpass -p "$PW" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 "root@$IP" '
+sshpass -p "$PW" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 "root@$IP" \
+	env BASEOS_EXPECTED_TARGET="$TARGET" BASEOS_EXPECTED_WIFI="$PROFILE_WIFI" sh -s <<'REMOTE'
 pass=0; fail=0
 ok()   { echo "PASS: $1"; pass=$((pass+1)); }
 bad()  { echo "FAIL: $1"; fail=$((fail+1)); }
@@ -16,6 +20,7 @@ chk()  { desc="$1"; shift; if eval "$@" >/dev/null 2>&1; then ok "$desc"; else b
 
 echo "=== identity ==="
 chk "running the base OS (/etc/baseos-release)" "grep -q BASEOS=1 /etc/baseos-release"
+chk "exact BaseOS target ($BASEOS_EXPECTED_TARGET)" "grep -qx BASEOS_TARGET=$BASEOS_EXPECTED_TARGET /etc/baseos-release"
 chk "no systemd running"                        "! pidof systemd"
 chk "busybox is init (PID 1)"                   "grep -q busybox /proc/1/comm || readlink /proc/1/exe | grep -q busybox"
 
@@ -35,8 +40,12 @@ chk "battery sysfs (AXP2202)"          "test -r /sys/class/power_supply/axp2202-
 chk "thermal zones"                    "test -r /sys/class/thermal/thermal_zone0/temp"
 chk "deep sleep available (mem)"       "grep -q mem /sys/power/state"
 chk "rumble sysfs (moto)"              "test -w /sys/class/power_supply/axp2202-battery/moto"
-chk "wifi module loaded (8821cs)"      "grep -q 8821cs /proc/modules"
-chk "wifi interface (wlan0)"           "test -d /sys/class/net/wlan0"
+if [ "$BASEOS_EXPECTED_WIFI" = 1 ]; then
+	chk "wifi module loaded (8821cs)"  "grep -q 8821cs /proc/modules"
+	chk "wifi interface (wlan0)"       "test -d /sys/class/net/wlan0"
+else
+	chk "wifi legitimately absent"     "! grep -q 8821cs /proc/modules && ! test -d /sys/class/net/wlan0"
+fi
 
 echo "=== NextUI ==="
 chk "SD card mounted (/mnt/sdcard)"    "mountpoint -q /mnt/sdcard"
@@ -54,4 +63,5 @@ done
 
 echo
 echo "=== RESULT: $pass passed, $fail failed ==="
-exit $fail'
+exit $fail
+REMOTE

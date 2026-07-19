@@ -5,15 +5,15 @@ exactly-scoped set of stock libraries and daemons. ~105 MB in a 512 MiB ext4.
 
 ## 1. Where the contents come from
 
-Three sources, assembled by `build-rootfs.sh` (see [02](02-image-build-and-flash.md)):
+Four sources, assembled by `build-rootfs.sh` (see [02](02-image-build-and-flash.md)):
 
 1. **Static BusyBox** (Alpine `busybox-static`, ~1 MB) — provides `/sbin/init`, `sh`
    (ash), `mount`, `insmod`, `udhcpc`, `hwclock`, `getty`, `poweroff`/`reboot`,
    **and — importantly — `mkfs.vfat`/`mkdosfs`, `partprobe`, `blockdev`, `killall`**
    (used by the first-boot expand, [03](03-first-boot-and-expand.md)).
-2. **The stock harvest** — an allowlist (`manifest/harvest.list`) of stock files
-   captured off a live device by `capture-stock.sh`. It is the `ldd` closure, computed
-   on hardware, of every NextUI ELF (bin/lib/cores) plus the daemons we keep:
+2. **The StockMod harvest** — an allowlist (`manifest/harvest.list`) extracted from
+   the selected target's p5 by `prepare-stock.sh`. The allowlist was established from
+   the hardware-tested runtime closure and contains the libraries and daemons we keep:
    - glibc 2.35 + `ld-linux-aarch64` + `libnss_{files,dns}`
    - Mali blob `libmali.so.0.20.0` + `libEGL`/`libGLESv2`/`libGLESv1_CM` shims
    - ALSA: `libasound` + `/usr/share/alsa` + `/etc/asound.conf` + the alsa-lib plugin
@@ -21,7 +21,8 @@ Three sources, assembled by `build-rootfs.sh` (see [02](02-image-build-and-flash
      mixer state through it)
    - WiFi: `wpa_supplicant`, `wpa_cli` (+ libnl3), `fsck.fat`
    - Bluetooth audio: `bluetoothd` (BlueZ 5.66, at `/usr/libexec/bluetooth/`),
-     `bluealsa`, `bluealsa-aplay`, `bluetoothctl`, `rtk_hciattach`, `hciconfig`,
+     `bluealsa`, `bluealsa-aplay`, `bluetoothctl`, `rtk_hciattach`, its ARMHF
+     interpreter/libc, `hciconfig`,
      `libbluetooth`, `libsbc`, `dbus-daemon` + `/usr/share/dbus-1` + `/etc/dbus-1` +
      `/etc/bluetooth`, and `/lib/firmware/rtlbt/`
    - the transitive `ldd` closure of all of the above — ~45 libraries total
@@ -35,12 +36,14 @@ Three sources, assembled by `build-rootfs.sh` (see [02](02-image-build-and-flash
 4. **Our overlay** (`overlay/`) — copied last, wins over everything.
 
 **Harvest gotchas learned on-device** (all fixed):
-- The harvest is symlink-dereferenced (`tar -h`) so soname paths become real files;
-  list sonames in `harvest.list`, not fully-versioned names.
+- Preparation extracts p5 with `debugfs`, then runs static BusyBox tar chrooted inside
+  that root with `-h`, so soname paths become real files and absolute symlinks cannot
+  escape into the container. List sonames in `harvest.list`, not fully-versioned names.
 - The interp compat symlink `/lib/ld-linux-aarch64.so.1` must exist or **every**
   dynamic binary is dead. `bluetoothctl` additionally needs `libreadline`/`libtinfo`.
-  Both found by an on-device chroot validation pass (the QEMU smoke test only
-  exercises static busybox — always chroot-test the harvest after manifest changes).
+  The stock `rtk_hciattach` is the one ARM32 binary and needs the harvested ARMHF
+  loader/libc pair. These were found by on-device validation; the build now checks
+  the complete AArch64 closure and the ARMHF pair before emitting `rootfs.tar`.
 
 ## 2. Merged-`/usr` layout
 
@@ -135,10 +138,11 @@ them. Two shims bridge the gap:
   same path (p6 is never mounted over `/mnt/vendor`), so `bt_init.sh` works unchanged:
   `init` → `insmod rtl_btlpm.ko` + `rtk_hciattach …`; `enable` → `hciconfig hci0 up`.
 
-Device identity: `/etc/baseos-release` (`BASEOS=1`, `BASEOS_DEVICE=rg40xx`,
-`BASEOS_MODEL_STRING=RG40xxV`) is baked at build time. A stub
-`/mnt/vendor/bin/dmenu.bin` containing the model string keeps NextUI's
-`strings … | grep ^RG` device-detection working without the stock frontend present.
+Device identity is generated from `devices.json` at build time. `/etc/baseos-release`
+separates the exact `BASEOS_TARGET`, frontend-family `BASEOS_DEVICE`, human model and
+stock-style `BASEOS_MODEL_STRING`. A stub `/mnt/vendor/bin/dmenu.bin` containing that
+model string keeps NextUI's `strings … | grep ^RG` detection working without the stock
+frontend present; it is a compatibility adapter, not a BaseOS dependency on NextUI.
 
 ## 8. Read-only vs read-write root
 

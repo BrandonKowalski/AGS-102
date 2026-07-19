@@ -1,98 +1,151 @@
-# 02 — Image build & flash
+# 02 — Firmware preparation, image build & flash
 
-Everything is runnable on macOS (Apple Silicon). All Linux/root work happens inside a
-`--platform linux/arm64` Alpine container (native on Apple Silicon via OrbStack); no
-loop mounts, no sudo, no privileged containers for the build itself. Filesystems are
-populated **unprivileged** with `mke2fs -d` (ext4) and `mtools` / `mkfs.vfat --offset`
-(FAT).
+Everything runs on macOS (Apple Silicon). Linux filesystem work happens inside
+unprivileged `--platform linux/arm64` Alpine containers; the build uses neither sudo,
+loop mounts nor a running handheld.
 
-## 1. The pipeline
+## 1. Inputs and targets
 
-| script | when | does |
-|---|---|---|
-| `capture-stock.sh` | once per stock firmware version | tars the `manifest/harvest.list` allowlist off a live device over SSH → `work/stock-harvest.tar` (+ provenance in `work/capture-info.txt`) |
-| `build-tools.sh` | once per toolchain bump | static **busybox** (Alpine pkg), static **dropbear** (built), static **fbsplash** (freetype linked in), static **gptgrow** → `work/tools/` |
-| `build-rootfs.sh` | every rootfs change | assembles `work/rootfs.tar` from harvest + tools + overlay + generated `/etc`; runs `ldconfig`; **verifies every ELF's `ld.so` closure resolves in-tree**; runs a guard that fails the build if any boot-critical script is non-executable |
-| `build-image.sh` | every image change | boot-prefix → regenerated GPTs → `mke2fs -d` p5 (rootfs) + p6/p7 stubs → `mkfs.vfat` p8 (empty) → overwrite the bootlogo on p2 → `work/baseos-h700.img` |
+The sole external input for a target is an **extracted StockMod `.img`**. BaseOS does
+not download or unpack multipart archives. `devices.json` declares the ten supported
+targets, their StockMod filename prefix, exact BaseOS identity, frontend-family
+compatibility string, native bootlogo dimensions and radio capabilities:
 
-Inputs are content-addressed by sha256; the build is deterministic from three inputs:
-`boot-prefix.img` (captured once), `stock-harvest.tar` (once per stock firmware), and
-Base OS bakes no frontend payload, so the build has no dependency on NextUI.
+`rg28xx`, `rg34xx`, `rg34xxsp`, `rg35xxplus`, `rg35xxh`, `rg35xxpro`, `rg35xxsp`,
+`rg40xxh`, `rg40xxv`, and `rgcubexx`. `rg35xxplus` covers both RG35XX Plus and
+RG35XX 2024 because StockMod distributes one image for them.
 
-## 2. The tools (`tools/`)
+It validates the primary GPT header, CRC and unusual `8 × 128` entry-table shape.
+Full-card images must also contain a matching valid backup GPT and all eight named
+partitions. StockMod `BASE` archives use a deliberate compact form: they end exactly
+after p7, leave entry 8 empty and retain the primary header's original full-disk
+geometry. That form is accepted only when p1–p7 have the exact H700 names and the file
+ends precisely at p7; arbitrary truncation still fails closed. The build restores the
+known H700 `primary` p8 identity when it writes a complete, internally consistent GPT.
+Preparation copies everything before p5 into `boot-prefix.img` and extracts the
+allowlisted userspace from p5. Extraction happens
+through `debugfs`; a static BusyBox tar runs chrooted inside the extracted root so
+absolute and relative symlinks are safely dereferenced within that root. A final
+GNU-tar pass normalizes ordering, owners and timestamps.
 
-- **`mkgpt.py`** — regenerates both GPTs of the freshly-sized image: keeps partition
-  names / type & unique GUIDs / p1–p5 starts, resizes p5–p8, writes valid CRCs and a
-  protective MBR. Conventions in [00](00-boot-chain-and-partitions.md) §5.
-- **`gptgrow.c`** — zero-dependency **static** C tool that runs *on the device* on
-  first boot to grow p8 to fill the whole card and live-resize it in the kernel via
-  the `BLKPG` ioctl. Inline CRC32, rewrites both GPTs + protective MBR. Full design in
-  [03](03-first-boot-and-expand.md).
-- **`make-bootlogo.sh`** — regenerates `assets/bootlogo.bmp` from the `fbsplash`
-  renderer so the hardware bootlogo equals fbsplash at rest. Run it whenever the
-  splash design or font changes. See [04](04-boot-splash.md).
-- **`fbsplash`** (source at `src/fbsplash.c`) — the framebuffer
-  splash. Built here with freetype statically linked; also compilable with
-  `-DFBSPLASH_TEST` to render to a PPM offline (no `/dev/fb0`) for design iteration.
+The per-target preparation contract under `work/<target>/` is:
 
-## 3. Image geometry (small image, grown on device)
+- `boot-prefix.img` — raw boot region plus partitions 1–4;
+- `stock-harvest.tar` — deterministic, dereferenced stock userspace allowlist;
+- `source.json` — target/model/capabilities, StockMod filename/size/SHA-256, complete
+  GPT geometry, output hashes, preserved partition hashes and logo dimensions.
 
-Because p8 is grown on first boot, it ships **small**, so the whole image is tiny:
+Paths in `manifest/harvest.list` are required unless they belong to the WiFi/Bluetooth
+sections (or the corresponding kernel module) and the target profile declares that
+radio absent. Permitted omissions are recorded in `source.json`; every other missing
+file fails preparation, so BaseOS never silently emits a partially functional rootfs.
 
-| part | size in image | runtime |
-|---|---|---|
-| boot-prefix (GPT + boot0/U-Boot + p1–p4) | ~212 MiB | verbatim |
-| p5 rootfs | 512 MiB ext4 (journal, 4.9-safe features) | mounted `/` |
-| p6 appfs | 16 MiB ext4 — empty stub (kept only for partition numbering) | unused |
-| p7 UDISK | 128 MiB ext4 | `/data` persistent |
-| p8 primary | 64 MiB empty FAT32 | **grown to fill the card + populated on first boot** |
+## 2. Build one specific target, end to end
 
-Result: **~0.9 GiB apparent / ~300 MB real**, down from an earlier 6.8 GiB design
-where p8 filled the image. Faster to flash, fits any card ≥ 2 GB.
+First extract the StockMod download with 7-Zip. For a multipart download, open or
+extract the `.7z.001` file; 7-Zip reads the following volumes automatically. BaseOS
+does not unpack these archives itself. Confirm that extraction produced one `.img`
+whose filename matches the target profile in `devices.json`.
 
-**Sizing gotchas:**
-- FAT32 needs 1 MiB of headroom below the partition end so `mkfs.vfat` alignment
-  can't extend the filesystem past the partition into the backup GPT.
-- ext4 features must be the 4.9-safe mask **with a journal** — see
-  [00](00-boot-chain-and-partitions.md) §3. Getting this wrong is invisible until you
-  flash (the kernel silently fails to mount root).
-
-## 4. Verification baked into the build
-
-`build-image.sh` self-checks: `sgdisk -v` (GPT integrity), `e2fsck -fn` on p5 and p6,
-`debugfs` stats confirming `/init`, `/usr/sbin/gptgrow` and `expand-storage`
-(`MinUI.zip`) are present, and a FAT read of p8. `build-rootfs.sh` verifies the full
-`ld.so` closure and the executable-bit guard. The QEMU smoke test
-(`test-boot-qemu.sh`) boots the rootfs as an initramfs under a generic aarch64 kernel
-and confirms `init → inittab → rcS` runs — but note it only exercises **static
-busybox**; the harvest's dynamic binaries must be validated by an on-device chroot
-(`validate-on-device.sh`), which is how two closure gaps were caught.
-
-## 5. Flash
-
-`flash-card.sh` is a guarded macOS flasher: it refuses internal/synthesised disks,
-checks the target is ≥ the image, and requires the operator to type the disk
-identifier back before `dd`-ing. **Never flash the stock TF1 card.**
+From the repository root, substitute the desired target and extracted image path:
 
 ```sh
-./flash-card.sh              # no args: list removable candidates
-./flash-card.sh diskN        # confirm by typing diskN, then dd + eject
+TARGET=rg40xxv
+FIRMWARE=/path/to/RG40XXV-...-mod-....img
+
+./prepare-stock.sh "$TARGET" "$FIRMWARE"
+./build-tools.sh                         # shared; only needed once per checkout
+./build-rootfs.sh "$TARGET"
+./test-boot-qemu.sh "$TARGET"
+./build-image.sh "$TARGET"
 ```
 
-Or any imager (Raspberry Pi Imager / balenaEtcher) with `work/baseos-h700.img`.
+The flashable result is `work/<target>/baseos-<target>.img`. Preparation and build
+artifacts stay isolated in the same target directory:
 
-## 6. Dev/debug access
+- `source.json` — source identity, hash, GPT geometry and derived hashes;
+- `boot-prefix.img` and `stock-harvest.tar` — prepared StockMod inputs;
+- `rootfs.tar` and `closure-report.txt` — assembled and checked userspace;
+- `bootlogo.bmp` and `baseos-<target>.img` — final target-specific outputs.
 
-- **Serial**: 115200 8N1 getty on `ttyS0` (the debug UART).
-- **SSH**: Dropbear starts once WiFi is up (enable WiFi in NextUI settings); login
-  `root` / `root`. Dropbear has **no sftp-server**, and the macOS `scp` now defaults
-  to SFTP — so push files with `cat local | ssh host 'cat > /path'` (or `scp -O`), not
-  plain `scp`. Binary transfers over `cat | ssh` are byte-exact (verify with a
-  checksum). Its host key differs from the stock OpenSSH, so use
-  `-o UserKnownHostsFile=/dev/null` after a reflash.
-- The rootfs is mountable rw (`mount -o remount,rw /`) for in-place edits during dev.
-- Persistent dev state (BT pairings, dropbear host keys, entropy seed, `machine-id`)
-  lives on `/data` (p7).
-- **Shell gotcha**: the repo's default shell is `fish`, which does **not** word-split
-  variables — never store `ssh -o …` options in a shell var and expand it; inline the
-  flags.
+To list removable media and then flash the image on macOS:
+
+```sh
+./flash-card.sh "$TARGET"
+./flash-card.sh "$TARGET" diskN
+```
+
+The second command requires typed confirmation and destroys all data on the selected
+disk. Use the whole disk identifier (`diskN`), never a partition such as `diskNs1`.
+
+`build-rootfs.sh` verifies the preparation hashes before assembling BusyBox, the
+target harvest and the BaseOS overlay. It generates `/etc/baseos-release` and the
+NextUI-compatible `/mnt/vendor/bin/dmenu.bin` model stub from `devices.json`.
+`BASEOS_TARGET` identifies exact hardware; `BASEOS_DEVICE` remains the frontend
+family; `BASEOS_MODEL_STRING` is the stock-style compatibility value.
+
+`build-image.sh` reads p2/p5 offsets from `source.json`, not constants. It preserves
+the boot chain and p1/p3/p4 byte-for-byte, retains p2 geometry while replacing only
+`bootlogo.bmp`, regenerates both GPTs, creates 4.9-safe journalled ext4 filesystems,
+and creates the small FAT data partition expanded on first boot. Bootlogos are rendered
+per target at 480×640, 640×480, 720×480 or 720×720; runtime `fbsplash` still reads the
+actual framebuffer geometry.
+
+## 3. One-command and batch builds
+
+Put one `.img` for every desired model in a directory. With no target list the batch
+command requires all ten; target arguments select a subset:
+
+```sh
+./build-stockmod.sh /path/to/firmware
+./build-stockmod.sh /path/to/firmware rg40xxv
+./build-stockmod.sh /path/to/firmware rg28xx rg40xxv rgcubexx
+```
+
+All matches are preflighted before preparation. A missing image, duplicate target, or
+more than one matching `<StockMod-prefix>*.img` is an error. Shared static tools are
+built once or reused; every selected target then receives its own preparation,
+rootfs, QEMU smoke test, image and verification artifacts. The one-target form is the
+short equivalent of the complete recipe in section 2.
+
+## 4. Image geometry and verification
+
+The source p5 start remains fixed because the vendor environment boots
+`/dev/mmcblk0p5`. BaseOS then packs a 512 MiB rootfs, 16 MiB empty appfs stub,
+128 MiB userdata filesystem and 64 MiB initial FAT32 partition, plus backup-GPT
+headroom. `expand-storage` grows p8 to the card on first boot.
+
+Every image build checks:
+
+- preparation size/SHA-256 values and target identity;
+- GPT CRCs, names, GUIDs, starts and non-overlap;
+- the raw boot region plus p1/p3/p4 against the prepared StockMod bytes;
+- p5/p6/p7 with read-only `e2fsck`;
+- `/init`, `gptgrow`, executable `expand-storage`, and exact target identity in p5;
+- the embedded bootlogo bytes and native dimensions;
+- FAT32 readability on p8.
+
+The synthetic importer suite covers valid preparation, deterministic output,
+dereferenced relative/absolute symlinks, directories, invalid GPT magic, incorrect
+primary or backup GPT data, incorrect partition names, truncation, ambiguous firmware
+matches and required-file omissions:
+
+```sh
+./test-prepare-stock.sh
+```
+
+QEMU validates generic init plumbing, not the vendor kernel or hardware. RG40XXV is
+the currently hardware-proven BaseOS target; generated images for the other models
+must not be described as hardware-validated until physically tested.
+
+## 5. Flash and optional device validation
+
+```sh
+./flash-card.sh rg40xxv             # list removable candidates
+./flash-card.sh rg40xxv diskN       # typed confirmation, write, eject
+./validate-on-device.sh rg40xxv <device-ip> # optional post-boot validation
+```
+
+The flasher refuses internal/synthesised disks and targets smaller than the selected
+image. Never flash the StockMod source card. On-device validation and development SSH
+remain useful after boot but are not preparation or build dependencies.

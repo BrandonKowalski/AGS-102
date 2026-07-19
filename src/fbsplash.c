@@ -232,7 +232,10 @@ int main(int argc, char **argv) {
 	prog = clampi(prog, 0, 100);
 	const char *msg = (argc > 2 && argv[2][0]) ? argv[2] : NULL;
 	const char *out = argc > 3 ? argv[3] : "/out/render.ppm";
-	int W = 640, H = 480;
+	int W = argc > 4 ? atoi(argv[4]) : 640;
+	int H = argc > 5 ? atoi(argv[5]) : 480;
+	W = clampi(W, 64, 4096);
+	H = clampi(H, 64, 4096);
 
 	struct fb_var_screeninfo v;
 	struct fb_fix_screeninfo f;

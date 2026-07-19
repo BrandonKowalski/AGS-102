@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "targets": [
+    {
+      "id": "rg28xx",
+      "model": "RG28XX",
+      "stockmod_prefix": "RG28XX-",
+      "baseos_device": "rg28xx",
+      "model_string": "RG28xx",
+      "bootlogo_width": 480,
+      "bootlogo_height": 640,
+      "wifi": false,
+      "bluetooth": false
+    },
+    {
+      "id": "rg34xx",
+      "model": "RG34XX",
+      "stockmod_prefix": "RG34XX-",
+      "baseos_device": "rg34xx",
+      "model_string": "RG34xx",
+      "bootlogo_width": 720,
+      "bootlogo_height": 480,
+      "wifi": true,
+      "bluetooth": true
+    },
+    {
+      "id": "rg34xxsp",
+      "model": "RG34XX SP",
+      "stockmod_prefix": "RG34XXSP-",
+      "baseos_device": "rg34xx",
+      "model_string": "RG34xxSP",
+      "bootlogo_width": 720,
+      "bootlogo_height": 480,
+      "wifi": true,
+      "bluetooth": true
+    },
+    {
+      "id": "rg35xxplus",
+      "model": "RG35XX Plus / RG35XX 2024",
+      "stockmod_prefix": "RG35XX+-P-",
+      "baseos_device": "rg35xx",
+      "model_string": "RG35xx",
+      "bootlogo_width": 640,
+      "bootlogo_height": 480,
+      "wifi": true,
+      "bluetooth": true
+    },
+    {
+      "id": "rg35xxh",
+      "model": "RG35XX H",
+      "stockmod_prefix": "RG35XXH-",
+      "baseos_device": "rg35xx",
+      "model_string": "RG35xxH",
+      "bootlogo_width": 640,
+      "bootlogo_height": 480,
+      "wifi": true,
+      "bluetooth": true
+    },
+    {
+      "id": "rg35xxpro",
+      "model": "RG35XX Pro",
+      "stockmod_prefix": "RG35XXPRO-",
+      "baseos_device": "rg35xx",
+      "model_string": "RG35xxPro",
+      "bootlogo_width": 640,
+      "bootlogo_height": 480,
+      "wifi": true,
+      "bluetooth": true
+    },
+    {
+      "id": "rg35xxsp",
+      "model": "RG35XX SP",
+      "stockmod_prefix": "RG35XXSP-",
+      "baseos_device": "rg35xx",
+      "model_string": "RG35xxSP",
+      "bootlogo_width": 640,
+      "bootlogo_height": 480,
+      "wifi": true,
+      "bluetooth": true
+    },
+    {
+      "id": "rg40xxh",
+      "model": "RG40XX H",
+      "stockmod_prefix": "RG40XXH-",
+      "baseos_device": "rg40xx",
+      "model_string": "RG40xxH",
+      "bootlogo_width": 640,
+      "bootlogo_height": 480,
+      "wifi": true,
+      "bluetooth": true
+    },
+    {
+      "id": "rg40xxv",
+      "model": "RG40XX V",
+      "stockmod_prefix": "RG40XXV-",
+      "baseos_device": "rg40xx",
+      "model_string": "RG40xxV",
+      "bootlogo_width": 640,
+      "bootlogo_height": 480,
+      "wifi": true,
+      "bluetooth": true
+    },
+    {
+      "id": "rgcubexx",
+      "model": "RG CubeXX",
+      "stockmod_prefix": "RGCUBEXX-",
+      "baseos_device": "cube",
+      "model_string": "RGcubexx",
+      "bootlogo_width": 720,
+      "bootlogo_height": 720,
+      "wifi": true,
+      "bluetooth": true
+    }
+  ]
+}

@@ -11,17 +11,20 @@ that frontend is **NextUI**, but the OS is deliberately independent of it (a cus
 frontend, Emulation Station, or anything else can take its place — see the
 [frontend hand-off](#frontend-integration) below).
 
-**Approach — *harvest, don't fork.*** Keep the stock **boot chain, kernel and vendor
-blobs byte-for-byte** (they give "perfect hardware support" — deep sleep included).
+**Approach — *harvest, don't fork.*** Prepare each target from an extracted StockMod
+firmware image, retaining its **boot chain, kernel and vendor blobs** (they give
+"perfect hardware support" — deep sleep included).
 Replace the entire Ubuntu 22.04 userland with a minimal **BusyBox-init** rootfs
 containing only the ~45 stock libraries and handful of daemons the frontend actually
-needs, proven by an `ldd` closure computed on hardware. No systemd, no udev, no
-NetworkManager, no apt.
+needs. No systemd, no udev, no NetworkManager, no apt. Building requires no live
+device, SSH credentials, or manually captured boot prefix.
 
 **Status (2026-07-19): working end-to-end on real hardware** (Anbernic RG40XXV):
 cold boot ~7 s to the frontend, first-boot auto-expand-to-fill of the data partition,
 real suspend-to-RAM deep sleep, WiFi/SSH, seamless boot splash. Image ~1.1 GiB
-apparent / ~400 MB real. Nothing is published upstream yet.
+apparent / ~400 MB real. The build pipeline supports all ten current StockMod H700
+targets; other models remain generated/verified rather than BaseOS hardware-validated
+until they are flashed and tested.
 
 ## Documentation
 
@@ -41,15 +44,17 @@ Full reference suite in [`docs/`](docs/):
 
 ```
 build-tools.sh        static busybox + dropbear + fbsplash + gptgrow (in a container)
-build-rootfs.sh       assemble + verify the minimal rootfs → work/rootfs.tar
-build-image.sh        compose the flashable image (GPT, ext4, FAT, bootlogo)
-capture-stock.sh      harvest the stock library/daemon set off a live device (SSH)
+prepare-stock.sh      derive one target's inputs from a StockMod .img
+build-stockmod.sh     prepare/build/test every target (or a selected subset)
+build-rootfs.sh       assemble + verify one target's minimal rootfs
+build-image.sh        compose one target's image (GPT, ext4, FAT, bootlogo)
 flash-card.sh         guarded macOS flasher (typed-disk confirmation)
 test-boot-qemu.sh     userspace boot smoke test under QEMU
 validate-on-device.sh on-device chroot validation of the harvest closure
+devices.json          target IDs, filename matching, identity, logo dimensions
 manifest/harvest.list the stock-file allowlist
 overlay/              our files that go into the rootfs (init, config, scripts)
-assets/               boot.ttf (Lexend Light), bootlogo.bmp, OFL.txt
+assets/               boot.ttf (Lexend Light), legacy 640×480 logo reference, OFL.txt
 tools/                gptgrow.c, mkgpt.py, make-bootlogo.sh
 src/fbsplash.c        the framebuffer boot-splash renderer
 diagnostics/          sleep-drain measurement hooks
@@ -62,12 +67,24 @@ Everything runs on macOS (Apple Silicon); all Linux/root work happens inside a
 `--platform linux/arm64` Alpine container (OrbStack), no sudo or loop mounts.
 
 ```sh
-./capture-stock.sh        # once per stock firmware version (needs a live device)
-./build-tools.sh          # once: static busybox / dropbear / fbsplash / gptgrow
-./build-rootfs.sh         # assemble + verify the rootfs
-./build-image.sh          # compose the image (no frontend baked in)
-./flash-card.sh diskN     # flash a spare card (never the stock card)
+# Extract the StockMod .7z.001/.7z.002 set first; BaseOS consumes the .img.
+./prepare-stock.sh rg40xxv /path/to/RG40XXV-...-mod-....img
+./build-tools.sh
+./build-rootfs.sh rg40xxv
+./test-boot-qemu.sh rg40xxv
+./build-image.sh rg40xxv
+./flash-card.sh rg40xxv diskN
 ```
+
+The image is written to `work/rg40xxv/baseos-rg40xxv.img`. Replace `rg40xxv` with
+another supported target ID throughout. For the same workflow in one command, use
+`./build-stockmod.sh /path/to/firmware rg40xxv`.
+
+For a complete set, put one extracted StockMod `.img` per model in one directory and
+run `./build-stockmod.sh /path/to/firmware`. Add target IDs after the directory to
+build a subset. The command rejects missing or ambiguous inputs before preparation.
+Supported IDs are `rg28xx`, `rg34xx`, `rg34xxsp`, `rg35xxplus` (Plus and 2024),
+`rg35xxh`, `rg35xxpro`, `rg35xxsp`, `rg40xxh`, `rg40xxv`, and `rgcubexx`.
 
 Insert into the **TF1** slot, power on. The **first boot expands the data partition to
 fill the whole card** (leaving it empty) and shows *COPY FRONTEND TO SD CARD*. Then:
@@ -82,14 +99,13 @@ Full detail in [02](docs/02-image-build-and-flash.md) and
 
 ## External inputs
 
-Base OS is self-contained; the build depends on exactly **one** thing produced outside
-this repo:
+Base OS depends on one external input per target: an **extracted StockMod `.img`**.
+Multipart `.7z` downloads must be extracted first. `prepare-stock.sh` validates the
+image, derives `boot-prefix.img` and `stock-harvest.tar`, and records the source name,
+size, SHA-256, GPT layout and derived hashes in `work/<target>/source.json`. Provenance
+is recorded as StockMod firmware; it does not claim to be an official Anbernic image.
 
-- **`boot-prefix.img`** — the first 222,298,112 bytes of a stock card (GPT + boot0 +
-  U-Boot + partitions 1–4), captured once per stock firmware version. Pass its path
-  via `BOOT_PREFIX=…` (see [00](docs/00-boot-chain-and-partitions.md)).
-
-The image bakes **no frontend** — the user copies one onto the card after first-boot
+Each output image bakes **no frontend** — the user copies one onto the card after first-boot
 expansion, so Base OS has no build- or run-time dependency on NextUI (or any frontend).
 
 ## Frontend integration
