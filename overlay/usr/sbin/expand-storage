@@ -28,18 +28,17 @@ splash() { [ -x /usr/bin/fbsplash ] && /usr/bin/fbsplash "$@" 2>/dev/null; }
 [ -b "$P8" ] || { log "no $P8"; exit 0; }
 [ -x /usr/sbin/gptgrow ] || { log "no gptgrow"; exit 0; }
 
-splash 45 "EXPANDING STORAGE"
-
 # Grow p8 to fill the card + live-resize it in the kernel (BLKPG). Idempotent:
 # exit 0 = grew (fresh card), 1 = already fills the disk, 2 = error. Only a
 # freshly-grown partition is (re)formatted, so a card that already fills the
 # disk — i.e. one the user has already set up — is left completely untouched.
 /usr/sbin/gptgrow "$DISK" >> "$LOG" 2>&1
 grew=$?
-if [ "$grew" != 0 ]; then
-	log "p8 already fills the disk; leaving it untouched (gptgrow=$grew)"
-	exit 0
-fi
+case "$grew" in
+	0) splash 45 "EXPANDING STORAGE" ;;
+	1) log "p8 already fills the disk; leaving it untouched"; exit 0 ;;
+	*) log "gptgrow failed (exit $grew); leaving p8 untouched"; exit 1 ;;
+esac
 partprobe "$DISK" >> "$LOG" 2>&1 || blockdev --rereadpt "$DISK" >> "$LOG" 2>&1 || true
 
 # Fresh empty FAT32 across the whole (now full-size) partition.
