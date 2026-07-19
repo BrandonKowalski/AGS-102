@@ -63,15 +63,16 @@ draw loop (see §5).
 |---|---|---|
 | `/init` (shell alive) | `fbsplash 10` | faint "BASE OS" |
 | `rcS` early | `fbsplash 30` | — |
-| expand: grow + reformat (first boot) | `fbsplash 38 "EXPANDING STORAGE"` | labelled |
-| expand: payload copy (first boot) | `fbsplash 50 "COPYING SYSTEM"` | labelled |
+| expand: grow + reformat (first boot only) | `fbsplash 45 "EXPANDING STORAGE"` | labelled |
 | `rcS` after card mount | `fbsplash 55` | — |
-| install (first boot) | `fbsplash 85 "INSTALLING"` | static, held ~1 min |
-| hand-off to frontend | `fbsplash 100` | fully lit, then NextUI draws over it |
+| frontend install (first boot with a frontend) | `fbsplash 85 "INSTALLING"` | static, held ~1 min |
+| hand-off to frontend | `fbsplash 100` | fully lit, then the frontend draws over it |
 
-Error states pass a message: `INSERT SD CARD`, `INSTALL FAILED`, `NO SYSTEM FOUND`.
-Post-install boots skip the expand/install rows entirely — just `10 → 30 → 55 → 100 →`
-NextUI, a couple of seconds.
+Error / prompt states pass a message: `INSERT SD CARD`, `INSTALL FAILED`, and
+**`COPY FRONTEND TO SD CARD`** (shown after first-boot expansion when the card is still
+empty — Base OS ships no frontend). Once a frontend is installed, boots skip the
+expand/install rows entirely — just `10 → 30 → 55 → 100 →` frontend, a couple of
+seconds.
 
 ## 4. Why NextUI's own installer UI can't render on base OS
 

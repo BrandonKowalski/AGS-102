@@ -89,6 +89,9 @@ docker run --rm --platform linux/arm64 \
   fi
   # gptgrow: first-boot expand-to-fill of the FAT data partition.
   [ -f /work/tools/gptgrow ] && cp /work/tools/gptgrow "$R/usr/sbin/gptgrow" && chmod 755 "$R/usr/sbin/gptgrow"
+  # card README dropped onto the empty data partition after expansion.
+  mkdir -p "$R/usr/share/baseos"
+  [ -f /assets/card-readme.txt ] && cp /assets/card-readme.txt "$R/usr/share/baseos/card-readme.txt"
 
   ## 7. ld.so.cache so the dynamic linker finds the multiarch dir
   chroot "$R" /usr/sbin/ldconfig || chroot "$R" /usr/sbin/ldconfig.real

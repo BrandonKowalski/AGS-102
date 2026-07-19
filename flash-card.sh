@@ -7,7 +7,7 @@
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-IMG="$HERE/work/nextui-h700-baseos.img"
+IMG="$HERE/work/baseos-h700.img"
 [ -f "$IMG" ] || { echo "missing $IMG (run build-image.sh)"; exit 1; }
 IMG_BYTES=$(stat -f %z "$IMG")
 

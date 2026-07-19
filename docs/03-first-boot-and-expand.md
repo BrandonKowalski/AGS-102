@@ -1,32 +1,31 @@
-# 03 — First boot: expand-to-fill & install
+# 03 — First boot: expand-to-fill, then add a frontend
 
-The image ships with a tiny 64 MiB empty data partition (p8). On the first boot it is
-grown to fill the whole card and populated, then NextUI installs itself. Every
-subsequent boot skips all of this.
+The image ships a tiny 64 MiB empty data partition (p8) and **no frontend**. On the
+first boot p8 is grown to fill the whole card and left empty; the user then copies a
+frontend onto it. Every subsequent boot skips the expansion.
 
 ## 1. Why reformat instead of resize-in-place
 
 In-place FAT32 growth would need `fatresize` (which pulls in libparted — no viable
 static build) or a hand-rolled cluster-relocation defrag (complex, corruption-prone).
-The robust alternative, given BusyBox already ships `mkfs.vfat`/`partprobe`/`blockdev`:
+Since Base OS bakes no payload, the far simpler path is safe:
 
 - ship p8 **small and empty**;
-- stage the release payload on the internal `appfs` partition (p6, ext4);
-- on first boot, **grow p8's GPT entry to fill the card, reformat it fresh at full
-  size, and copy the payload p6 → p8**.
+- on first boot, **grow p8's GPT entry to fill the card and give it a fresh, empty
+  FAT32 at full size**.
 
-This is corruption-safe: the payload lives on p6 until p8 is fully populated, so a
-power loss mid-expand just means it re-runs. It also shrinks the flashable image (p8
-no longer big in the image).
+Reformatting an empty partition can't lose data, so this needs no staging. It also
+keeps the flashable image tiny (p8 is small in the image). BusyBox already ships
+`mkfs.vfat`/`partprobe`/`blockdev`, so no extra tools are needed.
 
 ## 2. `gptgrow` — GPT growth + kernel live-resize (`tools/gptgrow.c`)
 
 A zero-dependency static C tool: `gptgrow /dev/mmcblk0`.
 
 1. reads the primary GPT, finds the highest-numbered partition (p8);
-2. if it already reaches `last_usable` → exit 1 (idempotent no-op);
+2. if it already reaches `last_usable` → **exit 1** (idempotent no-op);
 3. else sets its ending LBA to `total-4`, rewrites **both** GPT headers + entry tables
-   (inline CRC32) and the protective MBR; `fsync`;
+   (inline CRC32) and the protective MBR; `fsync`; → **exit 0**;
 4. **`ioctl(fd, BLKPG, BLKPG_RESIZE_PARTITION)`** to live-resize p8 in the kernel.
 
 Step 4 is essential: a full partition-table reread (`partprobe`) **fails with EBUSY**
@@ -44,45 +43,57 @@ p8 grew from 68 MB to **62.8 GB** on a 64 GB card.
 
 Runs from `rcS`, **before** the card is mounted:
 
-1. **provisioned check** — mount p8 `ro`; if it already contains `.system/` or
-   `MinUI.zip`, unmount and exit (a no-op on every boot after the first, so it never
-   touches user ROMs). This content check — rather than a `/data` flag — is robust
-   across a `/data` reset.
-2. paint `fbsplash 38 "EXPANDING STORAGE"`;
-3. `gptgrow /dev/mmcblk0` (grow + BLKPG); fallback `partprobe`/`blockdev --rereadpt`
-   (harmless EBUSY if BLKPG already did it);
-4. `mkfs.vfat -F 32 -n NEXTUI /dev/mmcblk0p8` (fresh, full size);
-5. paint `fbsplash 50 "COPYING SYSTEM"`; mount p6 `ro` + p8 rw; `cp -a
-   /payload/. → p8`; `sync`; unmount.
+1. paint `fbsplash 45 "EXPANDING STORAGE"`;
+2. `gptgrow /dev/mmcblk0` (grow + BLKPG). **Its exit code is the idempotency key:**
+   - **exit ≠ 0** (already fills the disk, i.e. an already-set-up card) → log and exit,
+     leaving p8 completely untouched. So a frontend the user has copied on is never
+     reformatted;
+   - **exit 0** (freshly grown) → continue;
+3. fallback `partprobe`/`blockdev --rereadpt` (harmless EBUSY if BLKPG already did it);
+4. `mkfs.vfat -F 32 -n BASEOS /dev/mmcblk0p8` (fresh empty FAT32, full size);
+5. mount p8 and drop `README.txt` (from `/usr/share/baseos/card-readme.txt`) explaining
+   how to add a frontend; `sync`; unmount.
 
-It logs to `/tmp/expand.log` **and** mirrors to `/data/expand.log` (persistent, on
-p7) so a failed expand is diagnosable after a power-off even without network.
+It logs to `/tmp/expand.log` **and** mirrors to `/data/expand.log` (persistent, on p7)
+so a failed expand is diagnosable after a power-off even without network. Keying
+idempotency on "does p8 already fill the disk" (rather than a `/data` flag or content
+check) is robust: expansion happens exactly once, and once done the partition is never
+touched again.
 
-## 4. The install hand-off
+## 4. Adding a frontend (the hand-off)
 
-After `rcS`, `nextui-session` sees `MinUI.zip` (copied onto p8 by expand) and runs the
-normal NextUI installer, which extracts `.system/…` and processes the `*.pakz`. This
-is the same install flow as the stock-hijack path; expand just delivered the payload.
-Install takes ~48 s on the tested card (SD-speed dependent). The screen shows a static
-`INSTALLING` frame during it — see [04](04-boot-splash.md) for why it is static and
-why NextUI's own installer UI can't render on base OS.
+Base OS ships no frontend, so after the first-boot expansion the card is empty and
+`nextui-session` shows **`COPY FRONTEND TO SD CARD`** and waits (init respawns it). The
+user then:
+
+1. mounts the card on a computer — it now presents the full-capacity `BASEOS` volume
+   with the `README.txt`;
+2. copies a frontend onto it — for NextUI, `MinUI.zip` (+ any `nextui.*.pakz`);
+3. reboots the handheld.
+
+On that boot `nextui-session` sees `MinUI.zip` and runs the frontend's **own**
+installer (which extracts `.system/…`, processes the `*.pakz`, and creates
+Bios/Roms/Saves), then launches it. The install takes ~1 min (SD-speed dependent) and
+shows a static `INSTALLING` frame — see [04](04-boot-splash.md) for why it's static and
+why the frontend's own installer UI can't render on Base OS. Every boot after that goes
+straight to the frontend.
+
+A different frontend just needs a compatible launch payload; the OS↔frontend contract
+is small (a launch entry point on the card, `/mnt/SDCARD`, the poweroff/reboot
+sentinels, a ready `wlan0`).
 
 ## 5. Boot-to-boot behaviour
 
-| boot | expand-storage | install | net |
+| boot | expand-storage | frontend | net |
 |---|---|---|---|
-| first (fresh flash) | grows + reformats + copies payload (~seconds) | runs (~1 min) | slow, one-time |
-| every later boot | provisioned check → no-op | `MinUI.zip`/pakz already consumed → skipped | a few seconds to the menu |
+| 1st (fresh flash) | grows + reformats p8 empty (~seconds) | none yet → `COPY FRONTEND` prompt | expand, then wait |
+| after user copies a frontend | p8 already fills disk → no-op | frontend installer runs (~1 min), then launches | slow, one-time |
+| every later boot | no-op | `MinUI.zip`/pakz consumed → launch only | a few seconds to the frontend |
 
-So a device that hit a first-boot problem generally recovers on the **next** power-on
-without a reflash: expand is skipped (p8 provisioned) and there's no payload left to
-re-install.
-
-## 6. Known edge & one caveat
+## 6. Edge cases & caveats
 
 - If the card is *exactly* the image size (no free space), `gptgrow` is a no-op and p8
-  stays 64 MB — realistically never (cards are always larger than the ~1 GB image),
-  but noted.
-- Because p8 ships empty and is reformatted on first boot, **users must add
-  Roms/Bios/Saves after the first boot**, not before — the standard handheld flow.
-  Anything dropped onto the tiny empty p8 before first boot is erased by the reformat.
+  stays 64 MB — realistically never (cards are always larger than the ~0.9 GB image).
+- Because p8 is reformatted on first boot, the user must add the frontend **after** the
+  first boot, not before — anything dropped on the tiny empty p8 pre-boot is erased by
+  the expansion. (Standard handheld flow: flash → boot to expand → add content.)

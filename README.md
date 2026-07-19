@@ -65,35 +65,43 @@ Everything runs on macOS (Apple Silicon); all Linux/root work happens inside a
 ./capture-stock.sh        # once per stock firmware version (needs a live device)
 ./build-tools.sh          # once: static busybox / dropbear / fbsplash / gptgrow
 ./build-rootfs.sh         # assemble + verify the rootfs
-PAYLOAD_DIR=/path/to/frontend-payload ./build-image.sh   # compose the image
+./build-image.sh          # compose the image (no frontend baked in)
 ./flash-card.sh diskN     # flash a spare card (never the stock card)
 ```
 
-Insert into the **TF1** slot, power on. First boot auto-expands the data partition to
-fill the card and installs the frontend (~1 min); every later boot is a few seconds
-to the frontend. Full detail in [02](docs/02-image-build-and-flash.md) and
+Insert into the **TF1** slot, power on. The **first boot expands the data partition to
+fill the whole card** (leaving it empty) and shows *COPY FRONTEND TO SD CARD*. Then:
+
+1. Put the card in a computer — it now presents the full-capacity `BASEOS` volume.
+2. Copy your frontend onto it (for NextUI: `MinUI.zip` + any `nextui.*.pakz`).
+3. Reboot the handheld — Base OS installs/launches the frontend, and every later boot
+   goes straight to it in a few seconds.
+
+Full detail in [02](docs/02-image-build-and-flash.md) and
 [03](docs/03-first-boot-and-expand.md).
 
 ## External inputs
 
-The build depends on two things produced outside this repo:
+Base OS is self-contained; the build depends on exactly **one** thing produced outside
+this repo:
 
 - **`boot-prefix.img`** — the first 222,298,112 bytes of a stock card (GPT + boot0 +
   U-Boot + partitions 1–4), captured once per stock firmware version. Pass its path
   via `BOOT_PREFIX=…` (see [00](docs/00-boot-chain-and-partitions.md)).
-- **The frontend payload** (`PAYLOAD_DIR`) — the SD-card tree the frontend installs
-  from (for NextUI, its `build/BASE` output: `MinUI.zip` + `*.pakz` + the
-  Bios/Roms/Saves skeleton). Base OS stages this on an internal partition and copies
-  it to the data partition on first boot.
+
+The image bakes **no frontend** — the user copies one onto the card after first-boot
+expansion, so Base OS has no build- or run-time dependency on NextUI (or any frontend).
 
 ## Frontend integration
 
 Base OS hands off to a frontend by `exec`-ing a launch script from the card
 (`overlay/usr/sbin/nextui-session`). Today it targets NextUI's
-`.system/h700/paks/MinUI.pak/launch.sh` and runs the NextUI installer, unchanged,
-via a pair of service shims (`systemctl`, `setBluetooth.sh` — see
-[01](docs/01-rootfs-and-init.md)). A different frontend swaps the session script and
-its payload; the OS↔frontend contract is small (a launch entry point, the standard
-`/mnt/SDCARD` card layout, the `/tmp/poweroff`·`/tmp/reboot` sentinels, evdev/ALSA/
-disp2 device access). Making that contract explicit and frontend-neutral is the next
-milestone as a custom frontend comes online.
+`.system/h700/paks/MinUI.pak/launch.sh` and runs the NextUI installer, unchanged, via a
+pair of service shims (`systemctl`, `setBluetooth.sh` — see
+[01](docs/01-rootfs-and-init.md)); it also owns the WiFi interface (`wlan0`) itself so a
+frontend never has to race the module load (see [05](docs/05-runtime-power-network.md)).
+A different frontend swaps the session script; the OS↔frontend contract is small (a
+launch entry point, the standard `/mnt/SDCARD` card layout, the
+`/tmp/poweroff`·`/tmp/reboot` sentinels, a ready `wlan0`, evdev/ALSA/disp2 device
+access). Making that contract explicit and frontend-neutral is the next milestone as a
+custom frontend comes online.

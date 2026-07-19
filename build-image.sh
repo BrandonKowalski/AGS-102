@@ -1,25 +1,23 @@
 #!/bin/sh
-# Compose the flashable SD image (small — ~1.1 GiB; p8 is grown to fill the
-# card on first boot):
+# Compose the flashable SD image (tiny — ~0.9 GiB; p8 is grown to fill the
+# card on first boot). BaseOS ships NO frontend payload — the user copies a
+# frontend onto the card after first-boot expansion.
 #   [0 .. p5) boot-prefix.img verbatim (GPT + boot0 + U-Boot + p1-p4)
 #   p5 rootfs  ext4 512 MiB  <- work/rootfs.tar (build-rootfs.sh)
-#   p6 appfs   ext4 200 MiB  first-boot payload under /payload (copied to p8)
+#   p6 appfs   ext4  16 MiB  empty stub (kept only for partition numbering)
 #   p7 UDISK   ext4 128 MiB  /data persistent state
-#   p8 primary FAT32 64 MiB  empty; expand-storage grows+reformats+fills it
+#   p8 primary FAT32 64 MiB  empty; expand-storage grows it to fill the card
 # Both GPTs are regenerated for the target size; partition names, type GUIDs,
-# unique GUIDs and the p1-p5 start offsets stay identical to stock. On first
-# boot expand-storage (rcS) runs gptgrow to extend p8 to the whole card,
-# reformats it, and copies the payload staged on p6.
+# unique GUIDs and the p1-p5 start offsets stay identical to stock.
 #
 # Usage:
-#   BOOT_PREFIX=/path/to/boot-prefix.img [PAYLOAD_DIR=/path] ./build-image.sh
+#   BOOT_PREFIX=/path/to/boot-prefix.img ./build-image.sh
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 WORK="$HERE/work"
 BOOT_PREFIX="${BOOT_PREFIX:-$HOME/Code/Me/tonky-os/dl/bsp/anbernic-rg40xxv/RG40XXV-V1.1.1.0-EN16GB-260521/boot-prefix.img}"
-PAYLOAD_DIR="${PAYLOAD_DIR:-}"
-OUT="$WORK/nextui-h700-baseos.img"
+OUT="$WORK/baseos-h700.img"
 
 [ -f "$WORK/rootfs.tar" ] || { echo "missing $WORK/rootfs.tar (run build-rootfs.sh)"; exit 1; }
 [ -f "$BOOT_PREFIX" ] || { echo "missing boot-prefix image: $BOOT_PREFIX"; exit 1; }
@@ -27,8 +25,8 @@ OUT="$WORK/nextui-h700-baseos.img"
 # Sector math (kept in sync with tools/mkgpt.py conventions).
 P5_START=434176
 P5_SECTORS=$((512 * 2048))              # 512 MiB rootfs
-P6_SECTORS=$((200 * 2048))             # 200 MiB appfs — first-boot payload
-P7_SECTORS=$((128 * 2048))             # 128 MiB /data
+P6_SECTORS=$((16 * 2048))               # 16 MiB appfs stub (unused)
+P7_SECTORS=$((128 * 2048))              # 128 MiB /data
 P6_START=$((P5_START + P5_SECTORS))
 P7_START=$((P6_START + P6_SECTORS))
 P8_START=$((P7_START + P7_SECTORS))
@@ -36,15 +34,10 @@ P8_START=$((P7_START + P7_SECTORS))
 TOTAL_SECTORS=$((P8_START + 64 * 2048 + 2048))
 P8_SECTORS=$((TOTAL_SECTORS - 4 - P8_START + 1))
 
-PAYLOAD_MOUNT=""
-if [ -n "$PAYLOAD_DIR" ]; then
-	PAYLOAD_MOUNT="-v $PAYLOAD_DIR:/payload:ro"
-fi
-
 docker run --rm --platform linux/arm64 \
   -v "$WORK":/work -v "$HERE/tools":/tools:ro -v "$HERE/assets":/assets:ro \
   -v "$(dirname "$BOOT_PREFIX")":/bootprefix:ro \
-  $PAYLOAD_MOUNT \
+  -e OUT_NAME="$(basename "$OUT")" \
   -e BOOT_PREFIX_NAME="$(basename "$BOOT_PREFIX")" \
   -e TOTAL_SECTORS="$TOTAL_SECTORS" \
   -e P5_START="$P5_START" -e P5_SECTORS="$P5_SECTORS" \
@@ -54,7 +47,7 @@ docker run --rm --platform linux/arm64 \
   alpine:3.20 sh -euc '
   apk add -q e2fsprogs dosfstools mtools python3
 
-  OUT=/work/nextui-h700-baseos.img
+  OUT="/work/$OUT_NAME"
   rm -f "$OUT"
 
   ## boot chain + stock GPT, then grow sparsely to target size
@@ -89,40 +82,29 @@ docker run --rm --platform linux/arm64 \
     -E offset=$((P5_START * 512)) "$OUT" $((P5_SECTORS / 8))
   # ^ size unit here is 4 KiB blocks: sectors/8
 
-  ## p6: appfs — stages the first-boot payload under /payload. expand-storage
-  ## copies it onto the freshly-grown p8 on first boot.
-  if [ -d /payload ]; then
-    P6STAGE=/tmp/p6stage; rm -rf "$P6STAGE"; mkdir -p "$P6STAGE/payload"
-    cp -a /payload/. "$P6STAGE/payload/"
-    mke2fs -q -F -t ext4 -O "$EXT4_OPTS" -b 4096 -L appfs -d "$P6STAGE" \
-      -E offset=$((P6_START * 512)) "$OUT" $((P6_SECTORS / 8))
-  else
-    mke2fs -q -F -t ext4 -O "$EXT4_OPTS" -b 4096 -L appfs \
-      -E offset=$((P6_START * 512)) "$OUT" $((P6_SECTORS / 8))
-  fi
+  ## p6: empty appfs stub (kept only for partition numbering)
+  mke2fs -q -F -t ext4 -O "$EXT4_OPTS" -b 4096 -L appfs \
+    -E offset=$((P6_START * 512)) "$OUT" $((P6_SECTORS / 8))
 
   ## p7: /data persistent state
   mke2fs -q -F -t ext4 -O "$EXT4_OPTS" -b 4096 -L userdata \
     -E offset=$((P7_START * 512)) "$OUT" $((P7_SECTORS / 8))
 
-  ## p8: empty FAT32, small. Grown to fill the card and populated from p6 on
-  ## first boot by expand-storage. 1 MiB headroom so mkfs alignment can never
-  ## extend the filesystem past the partition into the backup GPT.
-  mkfs.vfat -F 32 -n NEXTUI -S 512 \
+  ## p8: empty FAT32, small. Grown to fill the card on first boot by
+  ## expand-storage. 1 MiB headroom so mkfs alignment can never extend the
+  ## filesystem past the partition into the backup GPT.
+  mkfs.vfat -F 32 -n BASEOS -S 512 \
     --offset "$P8_START" "$OUT" $(((P8_SECTORS - 2048) / 2)) >/dev/null 2>&1
 
-  ## verification: GPT integrity, rootfs + payload integrity, FAT readability
+  ## verification: GPT integrity, rootfs integrity, FAT readability
   apk add -q sgdisk e2fsprogs-extra
   sgdisk -v "$OUT" | tail -4
   dd if="$OUT" of=/tmp/p5.img bs=512 skip="$P5_START" count="$P5_SECTORS" status=none
   e2fsck -fn /tmp/p5.img >/dev/null && echo "p5 ext4 OK"
   debugfs -R "stat /init" /tmp/p5.img 2>/dev/null | grep -q "Type: symlink" && echo "p5 /init OK"
   debugfs -R "stat /usr/sbin/gptgrow" /tmp/p5.img 2>/dev/null | grep -q Inode && echo "p5 gptgrow OK"
+  debugfs -R "stat /usr/sbin/expand-storage" /tmp/p5.img 2>/dev/null | grep -q "Mode:  0755" && echo "p5 expand-storage exec OK"
   rm -f /tmp/p5.img
-  dd if="$OUT" of=/tmp/p6.img bs=512 skip="$P6_START" count="$P6_SECTORS" status=none
-  e2fsck -fn /tmp/p6.img >/dev/null && echo "p6 ext4 OK"
-  debugfs -R "ls -l /payload" /tmp/p6.img 2>/dev/null | grep -q MinUI.zip && echo "p6 payload OK" || echo "p6 payload MISSING"
-  rm -f /tmp/p6.img
   minfo -i "$OUT@@$((P8_START * 512))" 2>/dev/null | grep -E "disk size|cluster size" | head -2
   ls -lh "$OUT"; du -h "$OUT"
 '

@@ -84,8 +84,11 @@ if [ -x "$LAUNCH" ] || [ -f "$LAUNCH" ]; then
 	exec /bin/sh "$LAUNCH"
 fi
 
-log "no frontend found on card"
-splash 100 "NO SYSTEM FOUND"
-# Don't spin: init respawns us; pace the retry.
+# No frontend on the card. BaseOS ships none — the user copies one (e.g.
+# NextUI's MinUI.zip) onto the card, which now fills the whole SD (see the
+# README.txt expand-storage left on it). Show a clear prompt and wait for a
+# reboot; init respawns us, so pace the retry.
+log "no frontend on card — waiting for the user to add one"
+splash 100 "COPY FRONTEND TO SD CARD"
 sleep 5
 exit 1

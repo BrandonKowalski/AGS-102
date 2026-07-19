@@ -7,16 +7,23 @@
 | Regenerated-GPT boot (boot0/U-Boot/kernel accept it) | ✅ on a 64 GB card |
 | Minimal rootfs mounts + BusyBox init → NextUI | ✅ cold boot 7.18 s |
 | First-boot expand-to-fill (p8 68 MB → 62.8 GB) | ✅ |
-| First-boot NextUI install from staged payload | ✅ (`installer exited 0`, ~48 s) |
+| NextUI install + launch on Base OS | ✅ (`installer exited 0`, ~48 s) — validated with the earlier staged-payload flow; the current user-copies-frontend flow reuses the same install path but is not yet re-validated on hardware |
 | Seamless bootlogo → fbsplash illumination | ✅ |
 | Deep sleep (real suspend-to-RAM, ~0 drain / 35 min) | ✅ |
-| WiFi unaided bring-up + stable association | ✅ |
+| WiFi unaided bring-up + stable association | ✅ (validated when the frontend's `wifi_init.sh` did the wait; the Base-OS-owned `wlan0` bring-up is not yet hardware-validated) |
 | Dropbear SSH over WiFi | ✅ |
 | GLES video / input / audio in NextUI | ✅ (NextUI runs; port already validated these) |
 | Bluetooth audio pairing end-to-end | ⏳ daemons run; not yet paired on base OS |
 | HDMI output | ⏳ not retested on base OS |
 | Exact deep-sleep standby µA (long sleep) | ⏳ counter too coarse for 35 min |
 | RG34XXSP / RG28XX / cube variants | ⏳ need per-device `boot-prefix` + `DEVICE=` |
+
+> **Standalone-repo changes not yet hardware-validated:** the split from NextUI moved
+> two responsibilities into Base OS — (a) the frontend payload is no longer baked in
+> (the user copies it after first-boot expansion), and (b) Base OS now brings `wlan0` up
+> itself instead of relying on the frontend's wifi script. Both build green and pass the
+> QEMU userspace smoke test, but need a hardware flash to confirm the first-boot
+> user-copy flow and the WiFi timing (see [05](05-runtime-power-network.md) §3).
 
 ## 2. Bug log — the five flash rounds to first boot
 

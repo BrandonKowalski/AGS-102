@@ -42,8 +42,24 @@ fi
 # System clock from RTC (stock delegated this to systemd; rc.local had it disabled).
 /sbin/hwclock -s 2>/dev/null &
 
-# WiFi module loads asynchronously; NextUI brings the interface up per settings.
-/sbin/insmod /lib/modules/8821cs.ko 2>/dev/null &
+# WiFi: BaseOS owns the wlan0 interface so a frontend never has to wait for it
+# (removing any dependency on the frontend's wifi script being race-hardened).
+# Loading the module triggers an asynchronous SDIO probe that creates wlan0 a
+# couple of seconds later; a background task waits for it and brings it up
+# (rfkill-unblock + link up). The frontend then only runs wpa_supplicant/DHCP on
+# an already-present, up interface. `ip`/`rfkill` are busybox applets on PATH.
+(
+	/sbin/insmod /lib/modules/8821cs.ko 2>/dev/null
+	wifi_wait=0
+	while [ ! -d /sys/class/net/wlan0 ] && [ "$wifi_wait" -lt 40 ]; do
+		sleep 0.25 2>/dev/null || sleep 1
+		wifi_wait=$((wifi_wait + 1))
+	done
+	if [ -d /sys/class/net/wlan0 ]; then
+		rfkill unblock wifi 2>/dev/null || true
+		ip link set wlan0 up 2>/dev/null || true
+	fi
+) &
 
 # machine-id (dbus/BlueZ). /etc/machine-id is a baked symlink into /run.
 if [ -s /data/machine-id ]; then
@@ -57,11 +73,12 @@ fi
 /bin/ln -sf /run/machine-id /var/lib/dbus/machine-id
 
 # First boot on a fresh flash: grow this card's data partition to fill the
-# card and populate it from the staged payload (no-op once provisioned).
+# whole card (leaving it empty for the user to add a frontend). No-op once the
+# card already fills the disk.
 [ -x /usr/sbin/expand-storage ] && /usr/sbin/expand-storage
 
-# Mount the NextUI card: TF2 (second slot) wins if present, else this card's
-# own "primary" FAT partition (p8).
+# Mount the frontend/data card: TF2 (second slot) wins if present, else this
+# card's own "primary" FAT partition (p8).
 /bin/mkdir -p /mnt/sdcard
 for dev in /dev/mmcblk1p1 /dev/mmcblk0p8; do
 	[ -b "$dev" ] || continue

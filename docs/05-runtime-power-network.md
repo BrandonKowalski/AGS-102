@@ -64,14 +64,28 @@ the exact suspend/resume boundary and log the delta to `/mnt/sdcard/sleep-drain.
 leave the device asleep for hours to get a projected-standby figure. (Hook files must
 end in `.sh` — NextUI's `run_hooks.sh` only executes `*.sh`.)
 
-## 3. WiFi
+## 3. WiFi — Base OS owns the interface
 
-- **Bring-up race (fixed).** Base OS loads `8821cs.ko` asynchronously to keep boot
-  fast, so NextUI's boot-time `wifi_init.sh start` could run before `wlan0` existed
-  and silently no-op (the user had to toggle WiFi off/on). `wifi_init.sh` now **waits
-  up to 10 s for `/sys/class/net/wlan0`** before configuring it — instant on stock,
-  where the module was loaded minutes earlier. Validated: unaided bring-up after
-  reboot, stable `wpa_state=COMPLETED` association.
+The RTL8821CS module (`8821cs.ko`) triggers an **asynchronous** SDIO probe that creates
+`wlan0` ~2 s after the insmod returns. If a frontend's boot-time wifi bring-up runs
+before `wlan0` exists, its `ip link set wlan0 up` / `wpa_supplicant -i wlan0` silently
+fail and WiFi never comes up until the user toggles it.
+
+To keep this **independent of any frontend**, Base OS owns the `wlan0` interface itself:
+`rcS` runs a background task that loads the module, **waits for `wlan0` to appear
+(bounded), then `rfkill unblock` + `ip link set wlan0 up`** (`ip`/`rfkill` are BusyBox
+applets). By the time a frontend wants WiFi, the interface is present and up, so the
+frontend only has to run `wpa_supplicant`/DHCP on it — no race-hardening needed in the
+frontend's own scripts.
+
+> Note: `wlan0` appears at ~5 s on the current timing (module init is the slow part).
+> A frontend that starts `wpa_supplicant` *very* early could still beat it; the robust
+> guarantee is that Base OS brings the interface up as soon as hardware allows and does
+> not depend on the frontend to wait. NextUI additionally waits for `wlan0` in its own
+> `wifi_init.sh` (belt-and-suspenders), but Base OS no longer relies on that.
+
+- **Power-save.** `rtw_power_mgnt=2` (driver default) — **identical to stock**, kept as
+  correct for a handheld's battery. It causes intermittent ICMP latency (aggressive
 - **Power-save.** `rtw_power_mgnt=2` (driver default) — **identical to stock**, kept as
   correct for a handheld's battery. It causes intermittent ICMP latency (aggressive
   pings from a host monitor flap), but the association is rock-solid; not a fault.

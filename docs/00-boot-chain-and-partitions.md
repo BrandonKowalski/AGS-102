@@ -18,7 +18,7 @@ the captured `boot-prefix.img`:
 | 3 | `env` | 270336 | 16 MiB | U-Boot environment (bootargs) | verbatim |
 | 4 | `boot` | 303104 | 64 MiB | **Android boot image**: kernel + vendor initramfs | verbatim |
 | 5 | `rootfs` | 434176 | 7 GiB stock | Ubuntu 22.04 (4.1 GB used) | **our 512 MiB minimal rootfs** |
-| 6 | `appfs` | — | 4 GiB stock | stock frontend + emulators | **200 MiB ext4 — first-boot payload** |
+| 6 | `appfs` | — | 4 GiB stock | stock frontend + emulators | **16 MiB ext4 stub (unused)** |
 | 7 | `UDISK` | — | 512 MiB stock | stock scratch/swap | **128 MiB ext4 — `/data` persistent state** |
 | 8 | `primary` | — | rest | vfat ROMs partition | **64 MiB empty FAT32 — grown to fill the card on first boot** |
 
