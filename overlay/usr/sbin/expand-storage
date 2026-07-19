@@ -1,0 +1,81 @@
+#!/bin/sh
+# First-boot expand-to-fill for the boot card's FAT data partition (p8).
+#
+# The image ships p8 small and empty; the release payload is staged on the
+# internal appfs partition (p6). On first boot we grow p8's GPT entry to fill
+# the whole card, reformat it fresh at full size, and copy the payload in.
+# Idempotent: a card whose p8 already holds our content is left untouched, so
+# this is a no-op on every boot after the first (and never touches user ROMs).
+#
+# Runs from rcS, before the card is mounted. In-place FAT growth needs tools we
+# don't ship (fatresize/libparted); a fresh mkfs at full size is simpler and
+# corruption-safe because the payload lives on p6 until p8 is populated.
+
+DISK=/dev/mmcblk0
+P8=/dev/mmcblk0p8
+PAYLOAD_PART=/dev/mmcblk0p6
+LOG=/tmp/expand.log
+
+# Mirror to persistent /data (p7, mounted by rcS before us) so a failed expand
+# is diagnosable after a power-off — /tmp is volatile.
+log() {
+	line="$(cut -d' ' -f1 /proc/uptime) expand: $*"
+	echo "$line" >> "$LOG"
+	[ -d /data ] && echo "$line" >> /data/expand.log 2>/dev/null || true
+}
+
+# On-screen status (illuminate stays in the 30s-50s band: after rcS's 30, before
+# the 55 it paints once storage is mounted).
+splash() { [ -x /usr/bin/fbsplash ] && /usr/bin/fbsplash "$@" 2>/dev/null; }
+
+[ -b "$P8" ] || { log "no $P8"; exit 0; }
+[ -x /usr/sbin/gptgrow ] || { log "no gptgrow"; exit 0; }
+
+# Already provisioned? (p8 carries our content) → nothing to do.
+probe=/tmp/.p8probe
+mkdir -p "$probe"
+if mount -t vfat -o ro "$P8" "$probe" 2>/dev/null; then
+	if [ -d "$probe/.system" ] || [ -f "$probe/MinUI.zip" ]; then
+		umount "$probe" 2>/dev/null
+		log "p8 already provisioned; skip"
+		exit 0
+	fi
+	umount "$probe" 2>/dev/null
+fi
+
+log "provisioning p8 (fresh card)"
+splash 38 "EXPANDING STORAGE"
+
+# 1. Grow p8's GPT entry to fill the card + live-resize it in the kernel (BLKPG).
+/usr/sbin/gptgrow "$DISK" >> "$LOG" 2>&1
+# Fallback reread in case BLKPG was unavailable (harmless if it was not).
+partprobe "$DISK" >> "$LOG" 2>&1 || blockdev --rereadpt "$DISK" >> "$LOG" 2>&1 || true
+
+# 2. Fresh FAT32 across the whole (now full-size) partition.
+if ! mkfs.vfat -F 32 -n NEXTUI "$P8" >> "$LOG" 2>&1; then
+	log "mkfs.vfat failed; leaving p8 as-is"
+	exit 1
+fi
+
+# 3. Copy the staged payload from p6 onto p8.
+src=/tmp/.payload
+dst=/tmp/.p8new
+mkdir -p "$src" "$dst"
+if mount -t ext4 -o ro "$PAYLOAD_PART" "$src" 2>/dev/null; then
+	if mount -t vfat -o rw "$P8" "$dst" 2>/dev/null; then
+		if [ -d "$src/payload" ]; then
+			splash 50 "COPYING SYSTEM"
+			cp -a "$src/payload/." "$dst/" >> "$LOG" 2>&1
+			sync
+			log "payload copied to p8"
+		else
+			log "no payload on p6 ($PAYLOAD_PART)"
+		fi
+		umount "$dst" 2>/dev/null
+	fi
+	umount "$src" 2>/dev/null
+else
+	log "cannot mount payload partition $PAYLOAD_PART"
+fi
+
+log "provisioning done"

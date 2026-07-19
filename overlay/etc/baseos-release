@@ -1,0 +1,6 @@
+# NextUI base OS build identity. Sourced by scripts that need to know they
+# are on the base OS rather than the stock Anbernic Ubuntu.
+BASEOS=1
+BASEOS_PLATFORM=h700
+BASEOS_DEVICE=rg40xx
+BASEOS_MODEL_STRING=RG40xxV

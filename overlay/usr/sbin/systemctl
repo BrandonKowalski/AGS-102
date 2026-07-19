@@ -1,0 +1,65 @@
+#!/bin/sh
+# Minimal systemd compatibility shim for the base OS (no systemd on board).
+# Covers exactly the calls NextUI's h700 scripts make:
+#   systemctl stop NetworkManager / wpa_supplicant[@...]   -> no-op ok
+#   systemctl is-active [--quiet] bluetooth                -> pidof bluetoothd
+#   systemctl start|restart bluetooth                      -> dbus + bluetoothd
+#   systemctl stop bluetooth                               -> kill bluetoothd
+# Everything else: succeed quietly (callers guard with `|| true` anyway).
+
+cmd=""
+unit=""
+for arg in "$@"; do
+	case "$arg" in
+		--*) ;;
+		*)
+			if [ -z "$cmd" ]; then cmd="$arg"; else unit="$arg"; fi
+			;;
+	esac
+done
+
+ensure_dbus() {
+	pidof dbus-daemon >/dev/null 2>&1 && return 0
+	mkdir -p /run/dbus
+	[ -s /run/machine-id ] || dbus-uuidgen > /run/machine-id 2>/dev/null
+	dbus-daemon --system 2>/dev/null
+	n=0
+	while [ ! -S /run/dbus/system_bus_socket ] && [ "$n" -lt 20 ]; do
+		sleep 0.1 2>/dev/null || sleep 1
+		n=$((n + 1))
+	done
+}
+
+case "$cmd" in
+	is-active)
+		case "$unit" in
+			bluetooth|bluetooth.service) pidof bluetoothd >/dev/null 2>&1; exit $? ;;
+			*) exit 3 ;;
+		esac
+		;;
+	start|restart)
+		case "$unit" in
+			bluetooth|bluetooth.service)
+				[ "$cmd" = restart ] && killall bluetoothd 2>/dev/null
+				ensure_dbus
+				if ! pidof bluetoothd >/dev/null 2>&1; then
+					/usr/libexec/bluetooth/bluetoothd 2>/dev/null &
+				fi
+				n=0
+				while ! pidof bluetoothd >/dev/null 2>&1 && [ "$n" -lt 10 ]; do
+					sleep 1; n=$((n + 1))
+				done
+				pidof bluetoothd >/dev/null 2>&1
+				exit $?
+				;;
+			*) exit 0 ;;
+		esac
+		;;
+	stop)
+		case "$unit" in
+			bluetooth|bluetooth.service) killall bluetoothd 2>/dev/null; exit 0 ;;
+			*) exit 0 ;;
+		esac
+		;;
+	*) exit 0 ;;
+esac

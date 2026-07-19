@@ -1,0 +1,7 @@
+root:x:0:
+tty:x:5:
+audio:x:29:
+input:x:104:
+bluetooth:x:112:
+messagebus:x:100:
+nogroup:x:65534:

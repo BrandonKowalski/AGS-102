@@ -1,0 +1,12 @@
+# BusyBox init for NextUI H700 base OS.
+# Kernel runs /init -> /sbin/init (busybox) which reads this file.
+# First line: raw liveness marker into the sacrificial p6 stub (offset 4 MiB)
+# — proves init+sh ran even if every filesystem mount later fails.
+::sysinit:/bin/sh -c 'echo "BASEOS-INIT-ALIVE" | dd of=/dev/mmcblk0p6 bs=512 seek=8196 conv=notrunc 2>/dev/null'
+::sysinit:/etc/init.d/rcS
+::respawn:/sbin/nextui-session
+# Serial console on the debug UART (dev builds; harmless without a cable).
+ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100
+::ctrlaltdel:/sbin/reboot
+::shutdown:/etc/init.d/rcK
+::restart:/sbin/init

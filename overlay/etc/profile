@@ -1,0 +1,5 @@
+export PATH=/mnt/sdcard/.system/h700/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PS1='[\u@nextui \W]# '
+export TERM=vt100
+export LANG=C
+export PLATFORM=h700

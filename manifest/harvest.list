@@ -1,0 +1,117 @@
+# H700 base OS stock harvest allowlist.
+# One device path per line; comments and blanks ignored.
+# Directories are captured recursively; symlinks are dereferenced (tar -h),
+# so list soname paths (what the dynamic linker/dlopen actually request),
+# not the fully-versioned real files.
+# Derived from the on-device ldd closure of every NextUI ELF + kept daemons
+# (2026-07-19, RG40XXV stock V1.1.1.0). See docs/h700-base-os/README.md.
+
+## dynamic linker + glibc
+/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1
+/usr/lib/aarch64-linux-gnu/libc.so.6
+/usr/lib/aarch64-linux-gnu/libm.so.6
+/usr/lib/aarch64-linux-gnu/libdl.so.2
+/usr/lib/aarch64-linux-gnu/libpthread.so.0
+/usr/lib/aarch64-linux-gnu/librt.so.1
+/usr/lib/aarch64-linux-gnu/libutil.so.1
+/usr/lib/aarch64-linux-gnu/libcrypt.so.1
+/usr/lib/aarch64-linux-gnu/libresolv.so.2
+/usr/lib/aarch64-linux-gnu/libnss_files.so.2
+/usr/lib/aarch64-linux-gnu/libnss_dns.so.2
+/usr/lib/aarch64-linux-gnu/libgcc_s.so.1
+/usr/lib/aarch64-linux-gnu/libstdc++.so.6
+
+## GPU: Mali blob + GLES/EGL shims (fbdev winsys)
+/usr/lib/libmali.so.0
+/usr/lib/libEGL.so.1
+/usr/lib/libGLESv2.so.2
+/usr/lib/libGLESv1_CM.so.1
+
+## audio: alsa-lib + configs + plugins (incl. bluealsa PCM/CTL), utils
+/usr/lib/aarch64-linux-gnu/libasound.so.2
+/usr/lib/aarch64-linux-gnu/alsa-lib
+/usr/share/alsa
+/etc/asound.conf
+/etc/alsa
+/usr/sbin/alsactl
+/usr/bin/amixer
+/usr/bin/aplay
+
+## ldd closure of NextUI ELFs + daemons (transitive, on-device)
+/usr/lib/aarch64-linux-gnu/libapparmor.so.1
+/usr/lib/aarch64-linux-gnu/libaudit.so.1
+/usr/lib/aarch64-linux-gnu/libblkid.so.1
+/usr/lib/aarch64-linux-gnu/libbrotlicommon.so.1
+/usr/lib/aarch64-linux-gnu/libbrotlidec.so.1
+/usr/lib/aarch64-linux-gnu/libcap-ng.so.0
+/usr/lib/aarch64-linux-gnu/libcap.so.2
+/usr/lib/aarch64-linux-gnu/libcrypto.so.3
+/usr/lib/aarch64-linux-gnu/libssl.so.3
+/usr/lib/aarch64-linux-gnu/libdbus-1.so.3
+/usr/lib/aarch64-linux-gnu/libexpat.so.1
+/usr/lib/aarch64-linux-gnu/libffi.so.8
+/usr/lib/aarch64-linux-gnu/libfreetype.so.6
+/usr/lib/aarch64-linux-gnu/libgcrypt.so.20
+/usr/lib/aarch64-linux-gnu/libgpg-error.so.0
+/usr/lib/aarch64-linux-gnu/libgio-2.0.so.0
+/usr/lib/aarch64-linux-gnu/libglib-2.0.so.0
+/usr/lib/aarch64-linux-gnu/libgmodule-2.0.so.0
+/usr/lib/aarch64-linux-gnu/libgobject-2.0.so.0
+/usr/lib/aarch64-linux-gnu/libmount.so.1
+/usr/lib/aarch64-linux-gnu/libnl-3.so.200
+/usr/lib/aarch64-linux-gnu/libnl-genl-3.so.200
+/usr/lib/aarch64-linux-gnu/libnl-route-3.so.200
+/usr/lib/aarch64-linux-gnu/libpcre2-8.so.0
+/usr/lib/aarch64-linux-gnu/libpcre.so.3
+/usr/lib/aarch64-linux-gnu/libpcsclite.so.1
+/usr/lib/aarch64-linux-gnu/libpng16.so.16
+/usr/lib/aarch64-linux-gnu/libsbc.so.1
+/usr/lib/aarch64-linux-gnu/libselinux.so.1
+/usr/lib/aarch64-linux-gnu/libsqlite3.so.0
+/usr/lib/aarch64-linux-gnu/libsystemd.so.0
+/usr/lib/aarch64-linux-gnu/libudev.so.1
+/usr/lib/aarch64-linux-gnu/libz.so.1
+/usr/lib/aarch64-linux-gnu/liblzma.so.5
+/usr/lib/aarch64-linux-gnu/liblz4.so.1
+/usr/lib/aarch64-linux-gnu/libzstd.so.1
+/usr/lib/aarch64-linux-gnu/libbz2.so.1.0
+
+## WiFi
+/usr/sbin/wpa_supplicant
+/usr/sbin/wpa_cli
+/usr/sbin/fsck.fat
+
+## dynamic linker cache tooling (ld.so.cache generated at build time)
+/usr/sbin/ldconfig
+/usr/sbin/ldconfig.real
+/etc/ld.so.conf
+/etc/ld.so.conf.d
+
+## Bluetooth audio stack
+/usr/lib/aarch64-linux-gnu/libreadline.so.8
+/usr/lib/aarch64-linux-gnu/libtinfo.so.6
+/usr/bin/hciconfig
+/usr/lib/libbluetooth.so.3
+/usr/libexec/bluetooth/bluetoothd
+/usr/bin/bluealsa
+/usr/bin/bluealsa-aplay
+/usr/bin/bluetoothctl
+/usr/bin/rtk_hciattach
+/usr/bin/dbus-daemon
+/usr/bin/dbus-uuidgen
+/usr/bin/dbus-send
+/etc/bluetooth
+/etc/dbus-1
+/usr/share/dbus-1
+/usr/lib/firmware/rtlbt
+/usr/lib/firmware/rtl_bt
+
+## kernel modules (the only three the stock OS loads)
+/usr/lib/modules/mali_kbase.ko
+/usr/lib/modules/4.9.170/kernel/drivers/net/wireless/rtl8821cs/8821cs.ko
+/usr/lib/modules/4.9.170/kernel/drivers/bluetooth/rtl_btlpm.ko
+
+## misc runtime data
+/usr/share/zoneinfo
+/usr/lib/terminfo
+/usr/bin/evtest

@@ -1,0 +1,4 @@
+# Informational only — rcS performs all mounts explicitly (fast path).
+# /            ext4   ro,noatime   (mmcblk0p5, remount rw for development)
+# /data        ext4   rw,noatime   (mmcblk0p7 "UDISK", persistent state)
+# /mnt/sdcard  vfat   rw           (mmcblk1p1 TF2 if present, else mmcblk0p8)

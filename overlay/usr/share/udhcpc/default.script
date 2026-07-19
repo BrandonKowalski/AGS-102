@@ -1,0 +1,29 @@
+#!/bin/sh
+# udhcpc event script (busybox). resolv.conf lives in /run (rootfs is RO);
+# /etc/resolv.conf is a baked symlink to /run/resolv.conf.
+RESOLV=/run/resolv.conf
+
+case "$1" in
+	deconfig)
+		ip addr flush dev "$interface" 2>/dev/null
+		ip link set "$interface" up 2>/dev/null
+		;;
+	bound|renew)
+		ip addr flush dev "$interface" 2>/dev/null
+		ip addr add "$ip/${mask:-24}" dev "$interface"
+		if [ -n "$router" ]; then
+			ip route del default dev "$interface" 2>/dev/null
+			for r in $router; do
+				ip route add default via "$r" dev "$interface"
+				break
+			done
+		fi
+		: > "$RESOLV".new
+		[ -n "$domain" ] && echo "search $domain" >> "$RESOLV".new
+		for d in $dns; do
+			echo "nameserver $d" >> "$RESOLV".new
+		done
+		mv "$RESOLV".new "$RESOLV"
+		;;
+esac
+exit 0

@@ -1,0 +1,14 @@
+#!/bin/sh
+# Development conveniences, started by rcS in the background.
+# This file is only installed in dev-flavour images (build-rootfs.sh).
+
+# Persistent dropbear host keys on /data.
+mkdir -p /data/dropbear
+for t in rsa ed25519; do
+	k=/data/dropbear/dropbear_${t}_host_key
+	[ -f "$k" ] || dropbearkey -t "$t" -f "$k" >/dev/null 2>&1
+done
+
+# SSH daemon (password: root/root — dev images only).
+dropbear -r /data/dropbear/dropbear_rsa_host_key \
+         -r /data/dropbear/dropbear_ed25519_host_key -B 2>/dev/null

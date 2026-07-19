@@ -1,0 +1,91 @@
+#!/bin/sh
+# The frontend session, respawned by busybox init. Replaces the whole stock
+# chain (launcher.service -> launcher.sh -> loadapp.sh -> dmenu_ln -> boot
+# shim). Delegates to the standard NextUI launch.sh from the card so the
+# NextUI runtime stays identical between stock-hijack and base OS installs.
+
+SD=/mnt/sdcard
+LOG=/tmp/nextui-session.log
+
+# Log to tmpfs always, and mirror onto the card once it is mounted so boot
+# problems leave forensic evidence readable from any computer.
+log() {
+	line="$(date '+%H:%M:%S') $*"
+	echo "$line" >> "$LOG"
+	if mountpoint -q "$SD" 2>/dev/null; then
+		echo "$line" >> "$SD/baseos-session.log" 2>/dev/null
+	fi
+}
+
+# splash <progress 0-100> [message]
+splash() { [ -x /usr/bin/fbsplash ] && /usr/bin/fbsplash "$@" 2>/dev/null; }
+
+# The card should already be mounted by rcS; retry here covers slow cards
+# and hot re-insertion after an unmount.
+n=0
+while ! mountpoint -q "$SD" 2>/dev/null; do
+	if [ "$n" -ge 15 ]; then
+		log "no card mounted after ${n}s"
+		splash 100 "INSERT SD CARD"
+		break
+	fi
+	for dev in /dev/mmcblk1p1 /dev/mmcblk0p8; do
+		[ -b "$dev" ] || continue
+		mount -t vfat -o rw,utf8,noatime,shortname=mixed "$dev" "$SD" 2>/dev/null && break
+		mount -t auto "$dev" "$SD" 2>/dev/null && break
+	done
+	mountpoint -q "$SD" 2>/dev/null && break
+	sleep 1
+	n=$((n + 1))
+done
+
+# Update flow: same triggers as the old boot shim (02-boot-and-installer.md).
+if mountpoint -q "$SD" 2>/dev/null; then
+	ZIP="$SD/MinUI.zip"
+	HAVE_PAKZ=0
+	for z in "$SD"/*.pakz; do [ -f "$z" ] && HAVE_PAKZ=1 && break; done
+	if [ -f "$ZIP" ] || [ "$HAVE_PAKZ" = 1 ]; then
+		# NextUI's installer can't draw its own UI on base OS: its show2.elf
+		# needs libSDL2/_image/_ttf, which base OS doesn't ship in /usr/lib (the
+		# stock OS did) and NextUI's own SDL2 isn't extracted yet when it runs.
+		# So paint one static "INSTALLING" frame and let the (~1 min) install run
+		# under it. Deliberately NOT animated: a background draw loop raced
+		# NextUI's first frame and left the splash stuck over its static menu.
+		splash 85 "INSTALLING"
+		if [ ! -f "$SD/.tmp_update/h700.sh" ] && [ -f "$ZIP" ]; then
+			log "bootstrapping installer from MinUI.zip"
+			unzip -o "$ZIP" ".tmp_update/*" -d "$SD" >> "$LOG" 2>&1
+			log "bootstrap unzip exited $?"
+		fi
+		if [ -f "$SD/.tmp_update/h700.sh" ]; then
+			log "running installer/updater"
+			sh "$SD/.tmp_update/h700.sh" >> "$LOG" 2>&1
+			log "installer exited $?"
+		else
+			log "installer missing after bootstrap"
+			splash 100 "INSTALL FAILED"
+		fi
+	fi
+fi
+
+LAUNCH="$SD/.system/h700/paks/MinUI.pak/launch.sh"
+if [ -x "$LAUNCH" ] || [ -f "$LAUNCH" ]; then
+	# rcS loads mali_kbase in the background; make sure /dev/mali0 exists
+	# before the frontend's GFX_init opens it (near-always already true).
+	m=0
+	while [ ! -e /dev/mali0 ] && [ "$m" -lt 30 ]; do
+		sleep 0.1 2>/dev/null || sleep 1
+		m=$((m + 1))
+	done
+	cut -d" " -f1 /proc/uptime > /run/boot-frontend-exec 2>/dev/null
+	# Complete the illumination as we hand off to the frontend.
+	splash 100
+	log "exec $LAUNCH (mali wait ${m}x)"
+	exec /bin/sh "$LAUNCH"
+fi
+
+log "no frontend found on card"
+splash 100 "NO SYSTEM FOUND"
+# Don't spin: init respawns us; pace the retry.
+sleep 5
+exit 1

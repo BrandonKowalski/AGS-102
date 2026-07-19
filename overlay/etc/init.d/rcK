@@ -1,0 +1,6 @@
+#!/bin/sh
+# Shutdown: persist entropy, flush, unmount. Busybox init runs this for
+# both poweroff and reboot.
+/bin/dd if=/dev/urandom of=/data/random-seed bs=512 count=1 2>/dev/null
+/bin/sync
+/bin/umount -a -r 2>/dev/null

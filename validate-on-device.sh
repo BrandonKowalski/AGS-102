@@ -1,0 +1,57 @@
+#!/bin/sh
+# Post-flash functional validation for the base OS, run from the Mac against
+# a booted device (enable WiFi in NextUI settings first, or use serial).
+#
+# Usage: ./validate-on-device.sh <device-ip> [root-password]
+set -u
+
+IP="${1:?usage: validate-on-device.sh <device-ip> [password]}"
+PW="${2:-root}"
+
+sshpass -p "$PW" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 "root@$IP" '
+pass=0; fail=0
+ok()   { echo "PASS: $1"; pass=$((pass+1)); }
+bad()  { echo "FAIL: $1"; fail=$((fail+1)); }
+chk()  { desc="$1"; shift; if eval "$@" >/dev/null 2>&1; then ok "$desc"; else bad "$desc"; fi; }
+
+echo "=== identity ==="
+chk "running the base OS (/etc/baseos-release)" "grep -q BASEOS=1 /etc/baseos-release"
+chk "no systemd running"                        "! pidof systemd"
+chk "busybox is init (PID 1)"                   "grep -q busybox /proc/1/comm || readlink /proc/1/exe | grep -q busybox"
+
+echo "=== boot speed ==="
+for m in rcS-start rcS-done frontend-exec; do
+	[ -f /run/boot-$m ] && echo "  boot-$m: $(cat /run/boot-$m)s"
+done
+chk "frontend exec marker exists" "test -f /run/boot-frontend-exec"
+
+echo "=== hardware ==="
+chk "GPU module loaded (mali_kbase)"   "grep -q mali_kbase /proc/modules"
+chk "GPU device node (/dev/mali0)"     "test -c /dev/mali0"
+chk "display (/dev/disp + fb0)"        "test -c /dev/disp && test -c /dev/fb0"
+chk "input devices (event0-2)"         "test -c /dev/input/event0 && test -c /dev/input/event1"
+chk "audio card 0 (audiocodec)"        "grep -q audiocodec /proc/asound/cards"
+chk "battery sysfs (AXP2202)"          "test -r /sys/class/power_supply/axp2202-battery/capacity"
+chk "thermal zones"                    "test -r /sys/class/thermal/thermal_zone0/temp"
+chk "deep sleep available (mem)"       "grep -q mem /sys/power/state"
+chk "rumble sysfs (moto)"              "test -w /sys/class/power_supply/axp2202-battery/moto"
+chk "wifi module loaded (8821cs)"      "grep -q 8821cs /proc/modules"
+chk "wifi interface (wlan0)"           "test -d /sys/class/net/wlan0"
+
+echo "=== NextUI ==="
+chk "SD card mounted (/mnt/sdcard)"    "mountpoint -q /mnt/sdcard"
+chk "nextui.elf running"               "pidof nextui.elf"
+chk "keymon running"                   "pidof keymon.elf"
+
+echo "=== resources ==="
+echo "  processes: $(ps | wc -l)"
+free | awk "/Mem:/ {printf \"  RAM used: %d/%d MB\n\", (\$2-\$7)/1024, \$2/1024}" 2>/dev/null || free
+echo "  rootfs: $(df -h / | tail -1 | awk "{print \$3\" used, ro=\"}")$(grep " / " /proc/mounts | grep -o "[[:space:]]ro[,[:space:]]" | head -1)"
+for z in 0 1 3; do
+	t=$(cat /sys/class/thermal/thermal_zone$z/temp 2>/dev/null)
+	[ -n "$t" ] && echo "  thermal_zone$z: $((t / 1000))°C"
+done
+
+echo
+echo "=== RESULT: $pass passed, $fail failed ==="
+exit $fail'

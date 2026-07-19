@@ -1,0 +1,94 @@
+#!/bin/sh
+# H700 base OS early init. Budget: well under one second — no sleeps,
+# anything slow runs in the background. Root filesystem is read-only;
+# all writable state is tmpfs or /data (p7, ext4).
+
+/bin/mount -t proc -o nodev,noexec,nosuid proc /proc
+/bin/mount -t sysfs -o nodev,noexec,nosuid sys /sys
+grep -q ' /dev devtmpfs ' /proc/mounts || /bin/mount -t devtmpfs dev /dev
+/bin/mkdir -p /dev/pts /dev/shm
+/bin/mount -t devpts -o gid=5,mode=620 devpts /dev/pts
+/bin/mount -t tmpfs -o mode=1777,size=256m tmpfs /dev/shm
+/bin/mount -t tmpfs -o mode=1777,size=256m tmpfs /tmp
+/bin/mount -t tmpfs -o mode=755,size=32m tmpfs /run
+/bin/cut -d" " -f1 /proc/uptime > /run/boot-rcS-start
+/bin/mount -t tmpfs -o mode=755,size=64m tmpfs /var
+
+# First visible sign of life: proves the kernel mounted p5 and init is running.
+[ -x /usr/bin/fbsplash ] && /usr/bin/fbsplash 30 2>/dev/null &
+
+# /var skeleton (tmpfs). Persistent pieces live on /data and are linked below.
+/bin/mkdir -p /var/lib /var/log /var/tmp /var/lib/alsa /var/lib/bluealsa /var/empty
+/bin/ln -s /run /var/run
+
+/bin/hostname -F /etc/hostname
+
+# GPU: needed by the frontend's first frame (~2s away), not before, and the
+# insmod costs ~0.7s. Load it in the background so it overlaps the card mount
+# and launch.sh; nextui-session waits for /dev/mali0 before handing off.
+/sbin/insmod /lib/modules/mali_kbase.ko 2>/dev/null &
+
+# Persistent state partition (p7, label "userdata").
+/bin/mkdir -p /data
+if ! /bin/mount -t ext4 -o rw,noatime /dev/mmcblk0p7 /data 2>/dev/null; then
+	/bin/mount -t tmpfs tmpfs /data
+fi
+/bin/mkdir -p /data/bluetooth /data/bluealsa /data/dropbear
+/bin/ln -sfn /data/bluetooth /var/lib/bluetooth
+
+# Entropy: restore last boot's seed (kernel 4.9 is slow to gather on its own).
+[ -f /data/random-seed ] && /bin/cat /data/random-seed > /dev/urandom 2>/dev/null
+
+# System clock from RTC (stock delegated this to systemd; rc.local had it disabled).
+/sbin/hwclock -s 2>/dev/null &
+
+# WiFi module loads asynchronously; NextUI brings the interface up per settings.
+/sbin/insmod /lib/modules/8821cs.ko 2>/dev/null &
+
+# machine-id (dbus/BlueZ). /etc/machine-id is a baked symlink into /run.
+if [ -s /data/machine-id ]; then
+	/bin/cp /data/machine-id /run/machine-id
+else
+	/usr/bin/dbus-uuidgen > /run/machine-id 2>/dev/null \
+		|| /bin/tr -d - < /proc/sys/kernel/random/uuid > /run/machine-id
+	/bin/cp /run/machine-id /data/machine-id 2>/dev/null
+fi
+/bin/mkdir -p /run/dbus /var/lib/dbus
+/bin/ln -sf /run/machine-id /var/lib/dbus/machine-id
+
+# First boot on a fresh flash: grow this card's data partition to fill the
+# card and populate it from the staged payload (no-op once provisioned).
+[ -x /usr/sbin/expand-storage ] && /usr/sbin/expand-storage
+
+# Mount the NextUI card: TF2 (second slot) wins if present, else this card's
+# own "primary" FAT partition (p8).
+/bin/mkdir -p /mnt/sdcard
+for dev in /dev/mmcblk1p1 /dev/mmcblk0p8; do
+	[ -b "$dev" ] || continue
+	if /bin/mount -t vfat -o rw,utf8,noatime,shortname=mixed "$dev" /mnt/sdcard 2>/dev/null \
+		|| /bin/mount -t exfat -o rw,noatime "$dev" /mnt/sdcard 2>/dev/null; then
+		break
+	fi
+	# One repair attempt, then retry once.
+	/usr/sbin/fsck.fat -a "$dev" >/dev/null 2>&1
+	if /bin/mount -t vfat -o rw,utf8,noatime,shortname=mixed "$dev" /mnt/sdcard 2>/dev/null \
+		|| /bin/mount -t auto "$dev" /mnt/sdcard 2>/dev/null; then
+		break
+	fi
+done
+/bin/ln -sfn /mnt/sdcard /mnt/SDCARD
+
+# Boot breadcrumb on the card (readable from any computer).
+if /bin/mountpoint -q /mnt/sdcard 2>/dev/null; then
+	echo "$(/bin/cut -d' ' -f1 /proc/uptime) rcS reached card mount" >> /mnt/sdcard/baseos-boot.log
+fi
+
+# Storage is up — advance the boot illumination.
+[ -x /usr/bin/fbsplash ] && /usr/bin/fbsplash 55 2>/dev/null &
+
+# Dev image extras (serial getty is in inittab; this starts SSH).
+[ -x /etc/init.d/dev ] && /etc/init.d/dev &
+
+/bin/cut -d" " -f1 /proc/uptime > /run/boot-rcS-done
+
+: # rcS must succeed; init proceeds to respawn nextui-session
