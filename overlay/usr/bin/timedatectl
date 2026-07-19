@@ -1,0 +1,113 @@
+#!/bin/sh
+# Minimal timedatectl compatibility for BaseOS's BusyBox init system.
+# NextUI uses only the Timezone property and set-timezone. The selected zone
+# lives on /data and /etc/localtime resolves through writable /run.
+set -eu
+
+ZONEINFO_DIR="${BASEOS_ZONEINFO_DIR:-/usr/share/zoneinfo}"
+DATA_DIR="${BASEOS_DATA_DIR:-/data}"
+LOCALTIME_LINK="${BASEOS_LOCALTIME_LINK:-/run/localtime}"
+STATE_FILE="$DATA_DIR/timezone"
+DEFAULT_TIMEZONE="Etc/UTC"
+
+valid_timezone() {
+	case "$1" in
+		""|/*|*..*) return 1 ;;
+	esac
+	[ -f "$ZONEINFO_DIR/$1" ]
+}
+
+current_timezone() {
+	zone=""
+	if [ -s "$STATE_FILE" ]; then
+		IFS= read -r zone < "$STATE_FILE" || true
+		if valid_timezone "$zone"; then
+			printf '%s\n' "$zone"
+			return 0
+		fi
+	fi
+
+	link="$(readlink "$LOCALTIME_LINK" 2>/dev/null || true)"
+	case "$link" in
+		"$ZONEINFO_DIR"/*)
+			zone="${link#"$ZONEINFO_DIR"/}"
+			if valid_timezone "$zone"; then
+				printf '%s\n' "$zone"
+				return 0
+			fi
+			;;
+	esac
+
+	printf '%s\n' "$DEFAULT_TIMEZONE"
+}
+
+link_timezone() {
+	zone="$1"
+	tmp_link="$LOCALTIME_LINK.$$"
+	rm -f "$tmp_link"
+	ln -s "$ZONEINFO_DIR/$zone" "$tmp_link"
+	mv -f "$tmp_link" "$LOCALTIME_LINK"
+}
+
+set_timezone() {
+	zone="$1"
+	if ! valid_timezone "$zone"; then
+		printf 'timedatectl: invalid timezone: %s\n' "$zone" >&2
+		return 1
+	fi
+
+	mkdir -p "$DATA_DIR"
+	tmp_state="$STATE_FILE.$$"
+	trap 'rm -f "$tmp_state" "$LOCALTIME_LINK.$$"' EXIT HUP INT TERM
+	printf '%s\n' "$zone" > "$tmp_state"
+	chmod 644 "$tmp_state"
+	mv -f "$tmp_state" "$STATE_FILE"
+	link_timezone "$zone"
+	trap - EXIT HUP INT TERM
+}
+
+show_property() {
+	property=""
+	shift
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+			-p|--property)
+				[ "$#" -ge 2 ] || exit 2
+				property="$2"
+				shift 2
+				;;
+			--value) shift ;;
+			*) shift ;;
+		esac
+	done
+
+	case "$property" in
+		Timezone) current_timezone ;;
+		# BaseOS does not currently run an NTP daemon. Report that honestly.
+		NTP) printf 'no\n' ;;
+		*) printf 'timedatectl: unsupported property: %s\n' "$property" >&2; return 1 ;;
+	esac
+}
+
+case "${1:-}" in
+	show)
+		show_property "$@"
+		;;
+	set-timezone)
+		[ "$#" -eq 2 ] || { printf 'usage: timedatectl set-timezone ZONE\n' >&2; exit 2; }
+		set_timezone "$2"
+		;;
+	set-ntp)
+		printf 'timedatectl: network time synchronization is unavailable\n' >&2
+		exit 1
+		;;
+	apply)
+		# BaseOS-private boot hook: restore the persisted link without
+		# rewriting the state file.
+		link_timezone "$(current_timezone)"
+		;;
+	*)
+		printf 'timedatectl: unsupported command: %s\n' "${1:-}" >&2
+		exit 1
+		;;
+esac

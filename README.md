@@ -43,7 +43,7 @@ Full reference suite in [`docs/`](docs/):
 ## Repository layout
 
 ```
-build-tools.sh        static busybox + dropbear + fbsplash + gptgrow (in a container)
+build-tools.sh        static busybox + dropbear + curl + fbsplash + gptgrow
 prepare-stock.sh      derive one target's inputs from a StockMod .img
 build-stockmod.sh     prepare/build/test every target (or a selected subset)
 build-rootfs.sh       assemble + verify one target's minimal rootfs

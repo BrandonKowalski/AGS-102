@@ -36,6 +36,11 @@ fi
 /bin/mkdir -p /data/bluetooth /data/bluealsa /data/dropbear
 /bin/ln -sfn /data/bluetooth /var/lib/bluetooth
 
+# Restore the selected timezone. /etc/localtime is baked as a symlink to
+# /run/localtime because the root filesystem is read-only; timedatectl keeps
+# the selected zone name on the persistent /data partition.
+[ -x /usr/bin/timedatectl ] && /usr/bin/timedatectl apply 2>/dev/null
+
 # Entropy: restore last boot's seed (kernel 4.9 is slow to gather on its own).
 [ -f /data/random-seed ] && /bin/cat /data/random-seed > /dev/urandom 2>/dev/null
 

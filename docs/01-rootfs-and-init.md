@@ -31,9 +31,11 @@ Four sources, assembled by `build-rootfs.sh` (see [02](02-image-build-and-flash.
    - the 3 kernel modules; `/usr/share/zoneinfo`; terminfo for `linux`/`vt100`/`xterm`
    - `ldconfig` (+ `ld.so.conf*`) — the build runs it to generate `ld.so.cache` so the
      multiarch dir resolves
-3. **Static Dropbear** (built once in a container) — dev SSH/scp. Also a static
-   **`fbsplash`** and **`gptgrow`** (see [04](04-boot-splash.md), [03](03-first-boot-and-expand.md)).
-4. **Our overlay** (`overlay/`) — copied last, wins over everything.
+3. **Static tools built once in a container** — Dropbear for dev SSH/scp, `curl`
+   with a CA bundle for frontend HTTP clients, plus **`fbsplash`** and **`gptgrow`**
+   (see [04](04-boot-splash.md), [03](03-first-boot-and-expand.md)).
+4. **Our overlay** (`overlay/`) — copied last, wins over everything. It includes
+   the small service/time compatibility shims needed by NextUI.
 
 **Harvest gotchas learned on-device** (all fixed):
 - Preparation extracts p5 with `debugfs`, then runs static BusyBox tar chrooted inside
@@ -89,7 +91,8 @@ ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100   # serial console (harmless wi
    NextUI's `GFX_init` ~2 s later, and the insmod costs ~0.7 s; backgrounding it
    overlaps the card mount (see the timing win in [05](05-runtime-power-network.md))
 4. mount p7 (`UDISK`) → `/data` (persistent state); create `/data/{bluetooth,bluealsa,
-   dropbear}`; symlink `/var/lib/bluetooth → /data/bluetooth`
+   dropbear}`; symlink `/var/lib/bluetooth → /data/bluetooth`; restore the persisted
+   timezone through `/run/localtime`
 5. restore the entropy seed; `hwclock -s` (background); `insmod 8821cs.ko` (background)
 6. `machine-id`: reuse `/data/machine-id` or generate one; symlink `/etc/machine-id`
    and `/var/lib/dbus/machine-id → /run/machine-id`
@@ -124,16 +127,24 @@ self-heal) are already guarded with `|| true` / `command -v` / `mountpoint -q`, 
 resolve harmlessly against our shims. Poweroff/reboot work via the sentinels NextUI
 already writes (`/tmp/poweroff`, `/tmp/reboot`) — BusyBox init handles both.
 
+NextUI's RetroAchievements HTTP layer also runs unchanged: it invokes the static
+`/usr/bin/curl` supplied by BaseOS. The binary is built from a pinned curl release and
+does not depend on the StockMod or frontend library trees.
+
 ## 7. Service shims — running NextUI's stock-OS scripts unchanged
 
 Base OS has no systemd and no vendor scripts, but NextUI's h700 scripts call into
-them. Two shims bridge the gap:
+them. Three shims bridge the gap:
 
 - **`/usr/sbin/systemctl`** — a ~40-line POSIX shim covering exactly the calls NextUI
   makes: `stop NetworkManager/wpa_supplicant*` → succeed no-op; `is-active bluetooth`
   → `pidof bluetoothd`; `start/restart bluetooth` → ensure a system `dbus-daemon` then
   launch `/usr/libexec/bluetooth/bluetoothd`; `stop bluetooth` → kill it. Everything
   else exits 0 quietly (callers guard with `|| true`).
+- **`/usr/bin/timedatectl`** — implements NextUI's timezone query/set calls without
+  systemd. The selected name is stored in `/data/timezone`; `/etc/localtime` points
+  through writable `/run/localtime`, which `rcS` restores on every boot. Invalid or
+  path-traversing zone names are rejected against the harvested zoneinfo database.
 - **`/mnt/vendor/ctrl/setBluetooth.sh`** — a POSIX rewrite of the vendor script at the
   same path (p6 is never mounted over `/mnt/vendor`), so `bt_init.sh` works unchanged:
   `init` → `insmod rtl_btlpm.ko` + `rtk_hciattach …`; `enable` → `hciconfig hci0 up`.

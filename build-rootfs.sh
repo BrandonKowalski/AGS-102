@@ -17,9 +17,11 @@ TOOLS="$HERE/work/tools"
 
 [ -f "$WORK/source.json" ] || { echo "missing $WORK/source.json (run prepare-stock.sh $TARGET IMAGE)"; exit 1; }
 [ -f "$WORK/stock-harvest.tar" ] || { echo "missing $WORK/stock-harvest.tar (run prepare-stock.sh $TARGET IMAGE)"; exit 1; }
-for tool in busybox dropbearmulti fbsplash gptgrow; do
+for tool in busybox dropbearmulti curl fbsplash gptgrow; do
   [ -x "$TOOLS/$tool" ] || { echo "missing $TOOLS/$tool (run build-tools.sh)"; exit 1; }
 done
+[ -f "$TOOLS/ca-certificates.crt" ] \
+  || { echo "missing $TOOLS/ca-certificates.crt (run build-tools.sh)"; exit 1; }
 python3 "$HERE/tools/source_manifest.py" verify "$WORK/source.json" "$TARGET"
 
 docker run --rm --platform linux/arm64 \
@@ -83,6 +85,7 @@ docker run --rm --platform linux/arm64 \
   printf "%s\n" "$BASEOS_MODEL_STRING" > "$R/mnt/vendor/bin/dmenu.bin"
   chmod 755 "$R/init" \
             "$R/etc/init.d/rcS" "$R/etc/init.d/rcK" "$R/etc/init.d/dev" \
+            "$R/usr/bin/timedatectl" \
             "$R/usr/sbin/nextui-session" "$R/usr/sbin/systemctl" \
             "$R/usr/sbin/expand-storage" \
             "$R/mnt/vendor/ctrl/setBluetooth.sh" \
@@ -91,7 +94,7 @@ docker run --rm --platform linux/arm64 \
   # Guard: every boot-critical script must be executable (a non-exec script is
   # skipped by its `[ -x ]` guard and fails silently — cost us one flash).
   for s in /init /etc/init.d/rcS /etc/init.d/rcK /usr/sbin/nextui-session \
-           /usr/sbin/expand-storage /usr/sbin/systemctl \
+           /usr/bin/timedatectl /usr/sbin/expand-storage /usr/sbin/systemctl \
            /mnt/vendor/ctrl/setBluetooth.sh; do
     [ -x "$R$s" ] || { echo "FATAL: $s is not executable in rootfs"; exit 1; }
   done
@@ -99,6 +102,7 @@ docker run --rm --platform linux/arm64 \
   ## 5. Runtime-generated files live in /run; bake the symlinks
   ln -sf /run/resolv.conf "$R/etc/resolv.conf"
   ln -sf /run/machine-id "$R/etc/machine-id"
+  ln -sf /run/localtime "$R/etc/localtime"
   ln -sf /proc/self/mounts "$R/etc/mtab"
 
   ## 6. Dropbear (dev flavour)
@@ -107,6 +111,12 @@ docker run --rm --platform linux/arm64 \
     ln -sf dropbearmulti "$R/usr/sbin/$n"
   done
   ln -sf ../sbin/dropbearmulti "$R/usr/bin/scp"
+
+  ## 6a. Static curl + CA roots for the NextUI RetroAchievements HTTP client.
+  cp /tools/curl "$R/usr/bin/curl"
+  chmod 755 "$R/usr/bin/curl"
+  mkdir -p "$R/etc/ssl/certs"
+  cp /tools/ca-certificates.crt "$R/etc/ssl/certs/ca-certificates.crt"
 
   ## 6b. fbsplash boot splash (static) + its bundled Lexend font
   if [ -f /tools/fbsplash ]; then
@@ -141,7 +151,7 @@ docker run --rm --platform linux/arm64 \
   find "$R/usr/bin" "$R/usr/sbin" "$R/usr/libexec" -type f | while read -r f; do
     head -c4 "$f" | grep -q "^.ELF" || continue
     case "$f" in
-      */busybox|*/dropbearmulti|*/fbsplash|*/gptgrow|*/ldconfig|*/ldconfig.real|*/rtk_hciattach) continue ;;
+      */busybox|*/dropbearmulti|*/curl|*/fbsplash|*/gptgrow|*/ldconfig|*/ldconfig.real|*/rtk_hciattach) continue ;;
     esac
     if ! chroot "$R" /usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1 --list \
         "${f#"$R"}" 2>/dev/null | grep -q "=>"; then
