@@ -17,7 +17,9 @@ fbsplash <progress 0-100> [message]
   proportion to `<progress>`: the reveal reaching the last letter is the moment the
   frontend takes over. A soft brightness ramp interpolates each glyph pixel between a
   dim (`#333B40`) and bright (`#EAF0F0`) colour based on its x-position vs the reveal
-  boundary. Subtle vertical ground gradient (`#0C0F12 → #090B0D`); tiny `V0.1` footer.
+  boundary. The initial state starts with the complete `B` illuminated; the remaining
+  letters carry progress. A subtle vertical ground gradient runs from `#0C0F12` to
+  `#090B0D`; no version or diagnostic text is shown during normal boot.
 - Text is **crisp anti-aliased Lexend Light** via **freetype**, statically linked into
   the binary (it's built in a musl container, so it can't dynamically link the
   device's glibc freetype — it static-links freetype instead, staying a self-contained
@@ -41,8 +43,9 @@ the actual wordmark — Lexend chosen; Inter explicitly rejected as over-used.
 
 Before `fbsplash` ever runs, boot0/U-Boot displays `bootlogo.bmp` from the
 boot-resource partition (p2, vfat). Stock ships a NextUI-branded logo; we replace it
-with **the fbsplash screen at rest (0 % illumination)** so the hardware bootlogo →
-fbsplash transition is seamless — same dim "BASE OS", same dark ground.
+with **the fbsplash screen at its initial 0% state** so the hardware bootlogo →
+fbsplash transition is seamless — the `B` is already fully illuminated against the
+same dark ground.
 
 - Format matches each target's vendor logo: **480×640, 640×480, 720×480 or 720×720;
   24-bit, uncompressed, bottom-up BMP**.
@@ -61,7 +64,7 @@ draw loop (see §5).
 
 | stage | call | shown |
 |---|---|---|
-| `/init` (shell alive) | `fbsplash 10` | faint "BASE OS" |
+| `/init` (shell alive) | `fbsplash 10` | `B` complete, reveal entering `A` |
 | `rcS` early | `fbsplash 30` | — |
 | expand: grow + reformat (first boot only) | `fbsplash 45 "EXPANDING STORAGE"` | labelled |
 | `rcS` after card mount | `fbsplash 55` | — |
@@ -69,8 +72,9 @@ draw loop (see §5).
 | hand-off to frontend | `fbsplash 100` | fully lit, then the frontend draws over it |
 
 Error / prompt states pass a message: `INSERT SD CARD`, `INSTALL FAILED`, and
-**`COPY FRONTEND TO SD CARD`** (shown after first-boot expansion when the card is still
-empty — Base OS ships no frontend). Once a frontend is installed, boots skip the
+**`✓`** (shown when neither card contains an installed frontend or installer). The
+check mark is drawn directly rather than sourced from the font, so it remains reliable
+even in the bitmap fallback path. Once a frontend is installed, boots skip the
 expand/install rows entirely — just `10 → 30 → 55 → 100 →` frontend, a couple of
 seconds.
 

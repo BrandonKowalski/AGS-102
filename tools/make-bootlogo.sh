@@ -1,7 +1,8 @@
 #!/bin/sh
 # Generate one target's bootlogo from the fbsplash renderer so the hardware
 # bootlogo (shown by boot0/U-Boot on the boot-resource partition) is pixel-
-# identical to fbsplash at rest (0% illumination). build-image.sh writes the
+# identical to fbsplash at its initial 0% state (the complete B illuminated).
+# build-image.sh writes the
 # result onto p2.
 # Output format matches the selected device: native dimensions, 24bpp,
 # uncompressed BMP. The artifact is written beneath work/<target>/.

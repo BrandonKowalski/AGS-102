@@ -2,11 +2,12 @@
 //
 //   fbsplash <progress 0-100> [message]
 //
-// Renders a monochrome "BASE OS" wordmark that illuminates left-to-right in
-// proportion to <progress>: the reveal reaching the last letter is the moment
-// the frontend takes over. Optional [message] is shown dim below (error/status
-// states). Text is crisp anti-aliased Lexend via freetype; if the font is
-// missing it falls back to a built-in bitmap so boot never blocks.
+// Renders a monochrome "BASE OS" wordmark that starts with B illuminated, then
+// continues left-to-right in proportion to <progress>: the reveal reaching the
+// last letter is the moment the frontend takes over. Optional [message] is shown
+// dim below (error/status states). Text is crisp anti-aliased Lexend via
+// freetype; if the font is missing it falls back to a built-in bitmap so boot
+// never blocks.
 #include <ctype.h>
 #include <fcntl.h>
 #include <linux/fb.h>
@@ -82,6 +83,57 @@ static void bg_rgb(int y, int yres, uint8_t *r, uint8_t *g, uint8_t *b) {
 }
 
 static int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+static double segment_dist2(double px, double py, double ax, double ay, double bx, double by) {
+	double dx = bx - ax, dy = by - ay;
+	double denom = dx * dx + dy * dy;
+	double t = denom > 0 ? ((px - ax) * dx + (py - ay) * dy) / denom : 0;
+	if (t < 0) t = 0;
+	if (t > 1) t = 1;
+	double ex = px - (ax + t * dx), ey = py - (ay + t * dy);
+	return ex * ex + ey * ey;
+}
+
+// The bundled Lexend font does not contain U+2713. Draw that one status glyph
+// ourselves so the frontend-ready state remains crisp and font-independent.
+static void draw_check(uint8_t *fb, struct fb_var_screeninfo *v, struct fb_fix_screeninfo *f,
+                       const int colour[3]) {
+	int H = (int)v->yres, W = (int)v->xres;
+	int size = clampi((int)(H * 0.065), 24, 80);
+	double cx = W * 0.5, cy = H * 0.625;
+	double ax = cx - size * 0.55, ay = cy - size * 0.02;
+	double bx = cx - size * 0.13, by = cy + size * 0.38;
+	double dx = cx + size * 0.62, dy = cy - size * 0.40;
+	double radius = clampi((int)(size * 0.105), 3, 10);
+	int minx = (int)(cx - size * 0.72), maxx = (int)(cx + size * 0.78);
+	int miny = (int)(cy - size * 0.58), maxy = (int)(cy + size * 0.56);
+	double r2 = radius * radius;
+
+	// 3x3 supersampling keeps the diagonals smooth without another dependency.
+	for (int y = miny; y <= maxy; y++) {
+		for (int x = minx; x <= maxx; x++) {
+			int covered = 0;
+			for (int sy = 0; sy < 3; sy++) {
+				for (int sx = 0; sx < 3; sx++) {
+					double px = x + (sx + 0.5) / 3.0;
+					double py = y + (sy + 0.5) / 3.0;
+					if (segment_dist2(px, py, ax, ay, bx, by) <= r2 ||
+					    segment_dist2(px, py, bx, by, dx, dy) <= r2)
+						covered++;
+				}
+			}
+			if (!covered)
+				continue;
+			int alpha = covered * 255 / 9;
+			uint8_t br, bg, bb;
+			bg_rgb(y, H, &br, &bg, &bb);
+			int r = (colour[0] * alpha + br * (255 - alpha)) / 255;
+			int g = (colour[1] * alpha + bg * (255 - alpha)) / 255;
+			int b = (colour[2] * alpha + bb * (255 - alpha)) / 255;
+			put_pixel(fb, v, f, x, y, make_pixel(v, r, g, b));
+		}
+	}
+}
 
 // --- freetype path ---------------------------------------------------------
 
@@ -168,7 +220,6 @@ static void render(uint8_t *fb, struct fb_var_screeninfo *vp, struct fb_fix_scre
 	const int dim[3] = {0x33, 0x3B, 0x40};
 	const int bright[3] = {0xEA, 0xF0, 0xF0};
 	const int msgcol[3] = {0x7C, 0x8A, 0x8A};
-	const int vercol[3] = {0x2F, 0x35, 0x39};
 
 	FT_Library lib;
 	FT_Face face;
@@ -185,11 +236,20 @@ static void render(uint8_t *fb, struct fb_var_screeninfo *vp, struct fb_fix_scre
 		int wx = (W - wordw) / 2;
 		int baseline = (int)(H * 0.44 + size * 0.35);
 		int ramp = clampi((int)(size * 0.55), 1, 400);
-		int reveal_x = wx + (int)((double)prog / 100.0 * wordw);
+		// The bootloader logo is rendered at 0%. Keep the complete B bright at
+		// that initial state, then use the remaining letters for real progress.
+		// Adding half the ramp makes every pixel in B reach the solid-bright end
+		// of the soft reveal rather than leaving its right side half illuminated.
+		int firstw = ft_measure(face, "B", 0);
+		int reveal_start = wx + firstw + ramp / 2;
+		int reveal_end = wx + wordw + ramp / 2;
+		int reveal_x = reveal_start + (int)((double)prog / 100.0 * (reveal_end - reveal_start));
 		ft_draw(fb, &v, &f, face, "BASE OS", wx, baseline, tracking, reveal_x, ramp, dim, bright);
 
 		// Optional status/error message (solid dim, centred below).
-		if (msg) {
+		if (msg && strcmp(msg, "\xE2\x9C\x93") == 0) {
+			draw_check(fb, &v, &f, msgcol);
+		} else if (msg) {
 			int ms = clampi((int)(H * 0.045), 12, 80);
 			FT_Set_Pixel_Sizes(face, 0, ms);
 			int mt = (int)(ms * 0.12);
@@ -198,19 +258,14 @@ static void render(uint8_t *fb, struct fb_var_screeninfo *vp, struct fb_fix_scre
 			int mb = (int)(H * 0.63 + ms * 0.35);
 			ft_draw(fb, &v, &f, face, msg, mx, mb, mt, W + 999, 1, msgcol, msgcol);
 		}
-
-		// Version footer (tiny, very dim).
-		int vs = clampi((int)(H * 0.028), 10, 40);
-		FT_Set_Pixel_Sizes(face, 0, vs);
-		int vt = (int)(vs * 0.36);
-		int vw = ft_measure(face, "V0.1", vt);
-		ft_draw(fb, &v, &f, face, "V0.1", (W - vw) / 2, (int)(H * 0.93), vt, W + 999, 1, vercol, vercol);
 	} else {
 		// Bitmap fallback: wordmark bright + optional message, no illumination.
 		int scale = W < 600 ? 4 : 5;
 		int tw = (int)strlen("BASE OS") * 6 * scale - scale;
 		bmp_text(fb, &v, &f, (W - tw) / 2, (int)(H * 0.42), "BASE OS", scale, make_pixel(&v, 0xEA, 0xF0, 0xF0));
-		if (msg) {
+		if (msg && strcmp(msg, "\xE2\x9C\x93") == 0) {
+			draw_check(fb, &v, &f, msgcol);
+		} else if (msg) {
 			int ms = W < 600 ? 2 : 3;
 			int mw = (int)strlen(msg) * 6 * ms - ms;
 			bmp_text(fb, &v, &f, (W - mw) / 2, (int)(H * 0.60), msg, ms, make_pixel(&v, 0x7C, 0x8A, 0x8A));

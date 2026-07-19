@@ -87,7 +87,7 @@ Supported IDs are `rg28xx`, `rg34xx`, `rg34xxsp`, `rg35xxplus` (Plus and 2024),
 `rg35xxh`, `rg35xxpro`, `rg35xxsp`, `rg40xxh`, `rg40xxv`, and `rgcubexx`.
 
 Insert into the **TF1** slot, power on. The **first boot expands the data partition to
-fill the whole card** (leaving it empty) and shows *COPY FRONTEND TO SD CARD*. Then:
+fill the whole card** (leaving it empty) and shows a check mark. Then:
 
 1. Put the card in a computer — it now presents the full-capacity `BASEOS` volume.
 2. Copy your frontend onto it (for NextUI: `MinUI.zip` + any `nextui.*.pakz`).

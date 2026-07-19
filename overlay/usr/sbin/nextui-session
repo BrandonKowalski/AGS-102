@@ -89,6 +89,6 @@ fi
 # README.txt expand-storage left on it). Show a clear prompt and wait for a
 # reboot; init respawns us, so pace the retry.
 log "no frontend on card — waiting for the user to add one"
-splash 100 "COPY FRONTEND TO SD CARD"
+splash 100 "✓"
 sleep 5
 exit 1

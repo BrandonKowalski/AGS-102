@@ -64,7 +64,7 @@ touched again.
 ## 4. Adding a frontend (the hand-off)
 
 Base OS ships no frontend, so after the first-boot expansion the card is empty and
-`nextui-session` shows **`COPY FRONTEND TO SD CARD`** and waits (init respawns it). The
+`nextui-session` shows **`✓`** and waits (init respawns it). The
 user then:
 
 1. mounts the card on a computer — it now presents the full-capacity `BASEOS` volume
@@ -87,7 +87,7 @@ sentinels, a ready `wlan0`).
 
 | boot | expand-storage | frontend | net |
 |---|---|---|---|
-| 1st (fresh flash) | grows + reformats p8 empty (~seconds) | none yet → `COPY FRONTEND` prompt | expand, then wait |
+| 1st (fresh flash) | grows + reformats p8 empty (~seconds) | none yet → `✓` prompt | expand, then wait |
 | after user copies a frontend | p8 already fills disk → no-op | frontend installer runs (~1 min), then launches | slow, one-time |
 | every later boot | no-op | `MinUI.zip`/pakz consumed → launch only | a few seconds to the frontend |
 
