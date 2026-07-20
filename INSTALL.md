@@ -5,7 +5,7 @@
 
 ## How to install
 
-1. Download the correct BaseOS image for your device.
+1. Download the correct BaseOS image for your device and unzip it. You will get an .img file of about 1 GB size.
 2. Use RPI Imager to burn the image to an empty SD card.
    1.  Go to "OS", then scroll down and click User custom.
    2.  Select the .img file you downloaded and click Next.
