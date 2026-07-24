@@ -54,6 +54,19 @@ layer, and each is now guarded:
 5. **Install-progress creep drew over NextUI.** A background `fbsplash` loop raced
    NextUI's first frame and left the splash stuck over its static menu. → removed;
    static `INSTALLING` frame only ([04](04-boot-splash.md) §5).
+6. **A cached tool binary shipped against new scripts.** `work/tools/` was reused
+   whenever the binaries merely *existed*, so editing `src/fbsplash.c` never rebuilt
+   the one that shipped. A pre-pill `fbsplash` reached a device whose boot scripts
+   already spoke the new contract: `--pill` fell into `atoi()` as progress 0, the
+   message argument shifted by one, and a card-less boot showed the full-screen logo
+   with one letter lit and `-1` for a caption — the real `INSERT SD CARD` silently
+   discarded. → `work/tools/.stamp` records the source hashes
+   (`tools/tools-stamp.sh`); `build-stockmod.sh` rebuilds on mismatch and
+   `build-rootfs.sh` refuses to ship. The deeper fix is that the renderer now rejects
+   option-shaped arguments instead of letting `atoi()` reinterpret them, so the same
+   skew fails loudly and leaves the boot logo untouched. **Two lessons: existence is
+   not freshness, and a CLI that parses with `atoi()` must reject what it doesn't
+   understand.**
 
 Debug technique that cracked the silent boots: **boot stock with the base-OS card in
 the TF2 slot** — that runs our GPT / ext4 / binaries against the *real* kernel without

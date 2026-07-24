@@ -28,6 +28,11 @@ BASEOS_VERSION="$(tr -d ' \n' < "$HERE/VERSION")"
 BASEOS_BUILD="$(git -C "$HERE" describe --always --dirty 2>/dev/null || echo unknown)"
 [ -f "$TOOLS/ca-certificates.crt" ] \
   || { echo "missing $TOOLS/ca-certificates.crt (run build-tools.sh)"; exit 1; }
+# Refuse to ship binaries older than the sources in this checkout. A stale
+# fbsplash paired with current overlay scripts is invisible until it renders
+# wrongly on a device, so fail here rather than at boot.
+"$HERE/tools/tools-stamp.sh" | cmp -s - "$TOOLS/.stamp" || {
+  echo "$TOOLS is stale for the current sources (run build-tools.sh)" >&2; exit 1; }
 python3 "$HERE/tools/source_manifest.py" verify "$WORK/source.json" "$TARGET"
 
 docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
@@ -145,6 +150,16 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
 
   ## 6b. fbsplash boot splash (static) + its bundled Lexend font
   if [ -f /tools/fbsplash ]; then
+    # Contract check on the actual binary being shipped: it must reject
+    # option-shaped arguments (exit 2) rather than let atoi() read them as a
+    # progress value. There is no /dev/fb0 here, so a well-formed call exits 1
+    # instead -- which is what distinguishes the two paths without a panel.
+    rc=0; /tools/fbsplash --anything 45 CHECK >/dev/null 2>&1 || rc=$?
+    [ "$rc" = 2 ] \
+      || { echo "FATAL: fbsplash does not reject options (exit $rc)"; exit 1; }
+    rc=0; /tools/fbsplash 45 CHECK >/dev/null 2>&1 || rc=$?
+    [ "$rc" = 1 ] \
+      || { echo "FATAL: fbsplash rejected a well-formed call (exit $rc)"; exit 1; }
     # busybox ships an fbsplash applet; drop its symlinks so ours is the only
     # fbsplash on PATH (usr/sbin precedes usr/bin), then install the real one.
     rm -f "$R/usr/sbin/fbsplash" "$R/usr/bin/fbsplash"

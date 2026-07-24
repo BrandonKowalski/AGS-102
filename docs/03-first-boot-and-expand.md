@@ -49,7 +49,8 @@ Runs from `rcS`, **before** the card is mounted:
      the user has copied on is never reformatted;
    - **exit 2** (GPT/device error) → log the failure, leave p7 untouched and fail;
    - **exit 0** (freshly grown) → continue;
-2. paint `fbsplash 45 "EXPANDING STORAGE"` now that a real resize is confirmed;
+2. paint `baseos-splash --important 45 "EXPANDING STORAGE"` now that a real resize is
+   confirmed;
 3. fallback `partprobe`/`blockdev --rereadpt` (harmless EBUSY if BLKPG already did it);
 4. `mkfs.vfat -F 32 -n BASEOS /dev/mmcblk0p7` (fresh empty FAT32, full size);
 5. mount p7 and drop `README.txt` (from `/usr/share/baseos/card-readme.txt`) explaining

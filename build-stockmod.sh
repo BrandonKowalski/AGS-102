@@ -31,10 +31,14 @@ for target in $TARGETS; do
 	"$HERE/prepare-stock.sh" "$target" "$image"
 done
 
+# Rebuild when a binary is missing *or* when src/ has moved on since the cached
+# ones were compiled. Existence alone is not enough: editing src/fbsplash.c and
+# rebuilding used to ship the previous binary with the new overlay scripts.
 if [ ! -x "$HERE/work/tools/busybox" ] \
   || [ ! -x "$HERE/work/tools/dropbearmulti" ] \
   || [ ! -x "$HERE/work/tools/fbsplash" ] \
-  || [ ! -x "$HERE/work/tools/gptgrow" ]; then
+  || [ ! -x "$HERE/work/tools/gptgrow" ] \
+  || ! "$HERE/tools/tools-stamp.sh" | cmp -s - "$HERE/work/tools/.stamp"; then
 	"$HERE/build-tools.sh"
 else
 	echo "Reusing shared tools in $HERE/work/tools"

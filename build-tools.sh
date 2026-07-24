@@ -116,4 +116,9 @@ file "$TOOLS/curl" | grep -q "statically linked" \
 [ -x "$TOOLS/sftp-server" ] || { echo "sftp-server build did not produce an executable" >&2; exit 1; }
 file "$TOOLS/sftp-server" | grep -q "statically linked" \
   || { echo "sftp-server build is not static" >&2; exit 1; }
+
+# Record the sources these binaries came from so the build scripts can tell a
+# reusable work/tools from a stale one.
+"$HERE/tools/tools-stamp.sh" > "$TOOLS/.stamp"
+
 ls -lh "$TOOLS"

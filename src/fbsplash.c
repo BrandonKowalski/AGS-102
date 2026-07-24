@@ -1,12 +1,17 @@
 // Minimal framebuffer boot splash/status renderer for the H700 base OS.
 //
-//   fbsplash <progress 0-100> [message]
-//   fbsplash --pill <progress|-1> <message>
+//   fbsplash <progress 0-100>              full-screen static logo
+//   fbsplash <progress 0-100|-1> <message> compact status pill overlay
 //
-// The full-screen path generates the static bootloader logo. Runtime boot
-// scripts use only --pill, which overlays a compact status surface without
-// clearing the boot logo. Text is crisp anti-aliased Lexend via freetype; if
-// the font is missing it falls back to a built-in bitmap so boot never blocks.
+// The mode follows the message, not a flag: with a message the renderer
+// overlays a compact status surface and preserves every pixel outside it; with
+// none it draws the full-screen logo, which is only ever wanted offline when
+// generating the bootloader image. Runtime boot scripts always pass a message.
+// -1 suppresses the pill's progress track (an action or error state).
+//
+// No options are accepted, and anything option-shaped is a hard error — see
+// reject_options(). Text is crisp anti-aliased Lexend via freetype; if the font
+// is missing it falls back to a built-in bitmap so boot never blocks.
 #include <ctype.h>
 #include <fcntl.h>
 #include <linux/fb.h>
@@ -507,19 +512,36 @@ static void render(uint8_t *fb, struct fb_var_screeninfo *vp, struct fb_fix_scre
 	}
 }
 
+// This renderer takes no options. Reject anything option-shaped rather than
+// letting atoi() quietly turn it into progress 0: that is precisely how a
+// binary predating the pill renderer, handed the `--pill 45 MESSAGE` of the
+// day's wrapper, painted the full-screen logo with "45" as its caption and
+// dropped the real message. A caller built against a different contract must
+// fail loudly and draw nothing, leaving the bootloader logo intact.
+// `-1` is a progress value, not an option, and passes.
+static int reject_options(int argc, char **argv) {
+	for (int i = 1; i < argc; i++)
+		if (argv[i][0] == '-' && argv[i][1] == '-')
+			return 1;
+	return 0;
+}
+
 #ifdef FBSPLASH_TEST
 // Offline render harness: draw to an in-memory 640x480 BGRA buffer and write a
 // PPM so the splash can be eyeballed without a real framebuffer or device.
 #include <arpa/inet.h>
 int main(int argc, char **argv) {
-	int pill = argc > 1 && strcmp(argv[1], "--pill") == 0;
-	int arg = pill ? 2 : 1;
-	int prog = argc > arg ? atoi(argv[arg]) : 0;
+	if (reject_options(argc, argv)) {
+		fprintf(stderr, "fbsplash: no options are accepted\n");
+		return 2;
+	}
+	int prog = argc > 1 ? atoi(argv[1]) : 0;
+	const char *msg = (argc > 2 && argv[2][0]) ? argv[2] : NULL;
+	int pill = msg != NULL;
 	prog = pill && prog < 0 ? -1 : clampi(prog, 0, 100);
-	const char *msg = (argc > arg + 1 && argv[arg + 1][0]) ? argv[arg + 1] : NULL;
-	const char *out = argc > arg + 2 ? argv[arg + 2] : "/out/render.ppm";
-	int W = argc > arg + 3 ? atoi(argv[arg + 3]) : 640;
-	int H = argc > arg + 4 ? atoi(argv[arg + 4]) : 480;
+	const char *out = argc > 3 ? argv[3] : "/out/render.ppm";
+	int W = argc > 4 ? atoi(argv[4]) : 640;
+	int H = argc > 5 ? atoi(argv[5]) : 480;
 	W = clampi(W, 64, 4096);
 	H = clampi(H, 64, 4096);
 
@@ -558,11 +580,14 @@ int main(int argc, char **argv) {
 }
 #else
 int main(int argc, char **argv) {
-	int pill = argc > 1 && strcmp(argv[1], "--pill") == 0;
-	int arg = pill ? 2 : 1;
-	int prog = argc > arg ? atoi(argv[arg]) : 0;
+	if (reject_options(argc, argv)) {
+		fprintf(stderr, "fbsplash: no options are accepted\n");
+		return 2;
+	}
+	int prog = argc > 1 ? atoi(argv[1]) : 0;
+	const char *msg = (argc > 2 && argv[2][0]) ? argv[2] : NULL;
+	int pill = msg != NULL;
 	prog = pill && prog < 0 ? -1 : clampi(prog, 0, 100);
-	const char *msg = (argc > arg + 1 && argv[arg + 1][0]) ? argv[arg + 1] : NULL;
 
 	int fd = open("/dev/fb0", O_RDWR);
 	if (fd < 0)

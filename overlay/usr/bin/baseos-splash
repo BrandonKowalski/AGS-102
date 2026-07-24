@@ -9,7 +9,12 @@ SPLASH_BIN="${BASEOS_FBSPLASH:-/usr/bin/fbsplash}"
 [ "${1:-}" = "--important" ] || exit 2
 shift
 
-[ "$#" -ge 1 ] || exit 2
+# Progress and a message, both required. fbsplash picks the pill over the
+# full-screen logo precisely because a message is present, so a call without
+# one would repaint the whole panel and erase the boot logo the rest of boot
+# exists to preserve.
+[ "$#" -ge 2 ] || exit 2
+[ -n "$2" ] || exit 2
 [ -x "$SPLASH_BIN" ] || exit 0
 
-exec "$SPLASH_BIN" --pill "$@"
+exec "$SPLASH_BIN" "$@"

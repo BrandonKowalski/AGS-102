@@ -30,6 +30,15 @@ if grep -Eq '(^|[[:space:]])splash[[:space:]]+100' \
 	exit 1
 fi
 
+# Only the wrapper may reach the renderer. A script calling fbsplash directly
+# could omit the message, and a message-less call is a full-screen repaint that
+# erases whatever boot logo the user has on p2.
+direct="$(grep -rl "fbsplash" "$HERE/overlay" | grep -v "/baseos-splash$" || true)"
+if [ -n "$direct" ]; then
+	echo "overlay scripts invoke the renderer directly: $direct" >&2
+	exit 1
+fi
+
 # The wrapper rejects routine progress: ordinary boot must never touch fb0.
 if run_splash 30; then
 	echo "routine splash unexpectedly succeeded" >&2
@@ -37,8 +46,21 @@ if run_splash 30; then
 fi
 [ ! -e "$TMP/splash.log" ]
 
-# Exceptional work is explicitly translated to the compact pill renderer.
+# The message is what selects the pill over the full-screen logo, so the
+# wrapper must refuse a call that lacks one instead of passing it through.
+if run_splash --important 45; then
+	echo "message-less splash unexpectedly succeeded" >&2
+	exit 1
+fi
+if run_splash --important 45 ""; then
+	echo "empty-message splash unexpectedly succeeded" >&2
+	exit 1
+fi
+[ ! -e "$TMP/splash.log" ]
+
+# Exceptional work reaches the renderer as progress + message, which is what
+# makes it draw the compact pill and preserve every pixel outside it.
 run_splash --important 45 "EXPANDING STORAGE"
-grep -qx -- "--pill 45 EXPANDING STORAGE" "$TMP/splash.log"
+grep -qx -- "45 EXPANDING STORAGE" "$TMP/splash.log"
 
 echo "boot splash policy tests passed"

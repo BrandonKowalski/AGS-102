@@ -61,7 +61,7 @@ TARGET=rg40xxv
 FIRMWARE=/path/to/RG40XXV-...-mod-....img
 
 ./prepare-stock.sh "$TARGET" "$FIRMWARE"
-./build-tools.sh                         # shared; only needed once per checkout
+./build-tools.sh                         # shared; rerun when src/ changes
 ./build-rootfs.sh "$TARGET"
 ./test-boot-qemu.sh "$TARGET"
 ./build-image.sh "$TARGET"

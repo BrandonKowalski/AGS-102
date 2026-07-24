@@ -10,20 +10,28 @@ the framebuffer, giving either logo an unbroken hand-off to the frontend.
 A small, static, zero-runtime-dependency C program:
 
 ```
-fbsplash <progress 0-100> [message]
-fbsplash --pill <progress|-1> <message>
+fbsplash <progress 0-100>               full-screen static logo
+fbsplash <progress 0-100|-1> <message>  compact status pill overlay
 ```
 
-The full-screen form is the offline source for the generated boot logo. Runtime boot
-scripts use only the pill form, through `baseos-splash`, and only for exceptional work
-or a state that needs action.
+**The message selects the mode, not a flag.** With a message the renderer overlays a
+pill and preserves everything else; with none it repaints the whole screen. The
+full-screen form exists only as the offline source for the generated boot logo —
+runtime boot scripts always pass a message, through `baseos-splash`, and only for
+exceptional work or a state that needs action.
+
+The renderer accepts **no options**, and treats any option-shaped argument as a fatal
+error (exit 2, nothing drawn). This is deliberate: `atoi("--pill")` is `0`, so a caller
+built against a different contract would otherwise have its arguments silently
+reinterpreted as progress — see [06](06-status-and-lessons.md) for the boot this cost.
 
 - Renders the fully illuminated monochrome **"BASE OS"** boot logo against a subtle
   vertical ground gradient from `#0C0F12` to `#090B0D`.
-- `--pill` preserves every pixel outside a compact rounded status surface near the
-  bottom of the screen. The opaque dark ground remains legible over arbitrary custom
-  artwork; ongoing work includes a thin progress track, while action/error states omit
-  the track.
+- The pill preserves every pixel outside a compact rounded status surface near the
+  bottom of the screen (verified: rendering `45 "EXPANDING STORAGE"` over the logo
+  changes a 256×54 box and zero pixels beyond it). The opaque dark ground remains
+  legible over arbitrary custom artwork; ongoing work includes a thin progress track,
+  while action/error states pass `-1` to omit it.
 - Text is **crisp anti-aliased Lexend Light** via **freetype**, statically linked into
   the binary (it's built in a musl container, so it can't dynamically link the
   device's glibc freetype — it static-links freetype instead, staying a self-contained
