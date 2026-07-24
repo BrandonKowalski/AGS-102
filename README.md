@@ -9,14 +9,13 @@ suspend-to-RAM, GLES, audio, input, Wi-Fi, Bluetooth audio, and HDMI.
 
 ## ⚡ Boot duration
 
-**≈7.14 seconds total** — power button to NextUI on RG40XXV.
-
-**2.96 seconds BaseOS handoff** — kernel start to frontend execution, our primary
+* **≈7.14 s** — power LED to NextUI on RG40XXV.
+* **2.96 s BaseOS** — measured kernel start to frontend execution, our primary
 optimization target.
 
-Stock Anbernic + NextUI baseline: **17.5 seconds total** (manual stopwatch).
+Stock Anbernic + NextUI baseline: **17.5 s** (manually measured with a stopwatch).
 
-Previous: **7.18 → 7.14 seconds** — static boot logo, ≈40 ms saved.
+Last change: **7.18 → 7.14 s** — static boot logo, ≈40 ms saved.
 
 ## What BaseOS provides
 
@@ -26,6 +25,7 @@ Previous: **7.18 → 7.14 seconds** — static boot logo, ≈40 ms saved.
 - First-boot expansion of the data partition to fill the SD card.
 - Full support for the handheld's display, sound, controls, networking, HDMI, and
   real suspend-to-RAM.
+- SSH active by default.
 
 ## Installation
 
