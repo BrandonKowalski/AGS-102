@@ -101,8 +101,8 @@ ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100   # serial console (harmless wi
 8. mount the NextUI card: TF2 (`/dev/mmcblk1p1`) if present, else this card's own
    `/dev/mmcblk0p8` → `/mnt/sdcard`, plus the `/mnt/SDCARD` compat symlink; write a
    boot breadcrumb to the card
-9. paint `fbsplash 55`; start dev extras (`/etc/init.d/dev` → dropbear) in the
-   background
+9. paint `fbsplash 55`; start dev extras (`/etc/init.d/dev` → dropbear SSH/sftp-server)
+   in the background
 
 No udev, no mdev: devtmpfs auto-creates nodes, SDL runs with
 `SDL_JOYSTICK_DISABLE_UDEV=1`, BlueZ makes its own uinput nodes, and `dbus-daemon`
