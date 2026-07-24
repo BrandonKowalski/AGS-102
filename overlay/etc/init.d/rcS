@@ -25,13 +25,19 @@ grep -q ' /dev devtmpfs ' /proc/mounts || /bin/mount -t devtmpfs dev /dev
 # and launch.sh; nextui-session waits for /dev/mali0 before handing off.
 /sbin/insmod /lib/modules/mali_kbase.ko 2>/dev/null &
 
-# Persistent state partition (p7, label "userdata").
+# Persistent state partition (p6, label "userdata"). It survives system
+# updates: an A/B slot flip only moves the rootfs partition.
 /bin/mkdir -p /data
-if ! /bin/mount -t ext4 -o rw,noatime /dev/mmcblk0p7 /data 2>/dev/null; then
+if ! /bin/mount -t ext4 -o rw,noatime /dev/mmcblk0p6 /data 2>/dev/null; then
 	/bin/mount -t tmpfs tmpfs /data
 fi
 /bin/mkdir -p /data/bluetooth /data/bluealsa /data/dropbear
 /bin/ln -sfn /data/bluetooth /var/lib/bluetooth
+
+# A freshly updated slot is on trial until a frontend session starts. Count the
+# boots that never got that far and restore the previous slot if this one
+# cannot. No-op unless an update is in its trial window.
+[ -x /usr/sbin/baseos-update ] && /usr/sbin/baseos-update boot-check
 
 # Restore the selected timezone. /etc/localtime is baked as a symlink to
 # /run/localtime because the root filesystem is read-only; timedatectl keeps
@@ -80,9 +86,9 @@ fi
 [ -x /usr/sbin/expand-storage ] && /usr/sbin/expand-storage
 
 # Mount the frontend/data card: TF2 (second slot) wins if present, else this
-# card's own "primary" FAT partition (p8).
+# card's own "primary" FAT partition (p7).
 /bin/mkdir -p /mnt/sdcard
-for dev in /dev/mmcblk1p1 /dev/mmcblk0p8; do
+for dev in /dev/mmcblk1p1 /dev/mmcblk0p7; do
 	[ -b "$dev" ] || continue
 	if /bin/mount -t vfat -o rw,utf8,noatime,shortname=mixed "$dev" /mnt/sdcard 2>/dev/null \
 		|| /bin/mount -t exfat -o rw,noatime "$dev" /mnt/sdcard 2>/dev/null; then
@@ -101,6 +107,11 @@ done
 if /bin/mountpoint -q /mnt/sdcard 2>/dev/null; then
 	echo "$(/bin/cut -d' ' -f1 /proc/uptime) rcS reached card mount" >> /mnt/sdcard/baseos-boot.log
 fi
+
+# System update: apply a *.bosupd payload the user copied onto the card. Costs
+# one failed glob on an ordinary boot; when a payload is present it writes the
+# inactive rootfs slot, verifies it, flips the GPT and reboots.
+[ -x /usr/sbin/baseos-update ] && /usr/sbin/baseos-update apply
 
 # Dev image extras (serial getty is in inittab; this starts SSH).
 [ -x /etc/init.d/dev ] && /etc/init.d/dev &

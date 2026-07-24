@@ -25,6 +25,18 @@ EXPECTED_NAMES = [
     "UDISK",
     "primary",
 ]
+# The composed BaseOS image drops `appfs` and shifts UDISK/primary down a slot;
+# the freed region becomes the unallocated A/B rootfs slot (see mkgpt.py).
+BASEOS_NAMES = [
+    "special",
+    "boot-resource",
+    "env",
+    "boot",
+    "rootfs",
+    "UDISK",
+    "primary",
+    None,
+]
 SECTOR_SIZE = 512
 CHUNK_SIZE = 4 * 1024 * 1024
 
@@ -51,7 +63,14 @@ def sha256_range(path: Path, offset: int, size: int) -> str:
     return digest.hexdigest()
 
 
-def parse_gpt(image: Path) -> dict:
+def parse_gpt(image: Path, expected_names: list | None = None) -> dict:
+    """Parse and validate a primary GPT.
+
+    `expected_names` is the full-disk name/order contract; it defaults to the
+    stock H700 eight-partition table. Composed BaseOS images pass BASEOS_NAMES.
+    """
+    if expected_names is None:
+        expected_names = EXPECTED_NAMES
     image_size = image.stat().st_size
     if image_size % SECTOR_SIZE:
         raise ValueError("disk image size is not a whole number of 512-byte sectors")
@@ -119,7 +138,7 @@ def parse_gpt(image: Path) -> dict:
 
         if backup_lba == image_sectors - 1:
             packaging = "full-disk"
-            if names != EXPECTED_NAMES:
+            if names != expected_names:
                 raise ValueError(f"unexpected partition names/order: {names}")
             handle.seek(backup_lba * SECTOR_SIZE)
             backup_sector = handle.read(SECTOR_SIZE)

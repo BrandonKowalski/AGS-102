@@ -1,16 +1,31 @@
 #!/usr/bin/env python3
-"""GPT surgery for the H700 base OS image.
+"""GPT surgery for the H700 BaseOS image.
 
 Reads the stock primary GPT already present in the image (from
-boot-prefix.img), keeps partition names/types/GUIDs and the start offsets of
-p1-p5, resizes p5-p7 to the given sector counts, makes p8 fill the remaining
-space, and writes a valid primary + backup GPT for the target image size.
+boot-prefix.img) and rewrites it into the BaseOS 1.0 seven-partition layout:
+
+    1 special  2 boot-resource  3 env  4 boot   (vendor, verbatim)
+    5 rootfs      slot A, at the stock p5 start
+      (unallocated) slot B, the same size — the A/B update target
+    6 UDISK       /data, carrying the stock UDISK entry identity
+    7 primary     FAT32 "BASEOS", the only desktop-visible volume
+    8 (empty)
+
+The stock `appfs` entry is dropped and the UDISK/primary entries are *shifted*
+down a slot, so each partition keeps its stock name, type GUID and unique GUID.
+The inactive rootfs slot is deliberately not a partition: it costs no visible
+partition and no desktop OS can see it.
+
+Every entry except `primary` gets GPT attribute bits 62 (hidden) and 63 (no
+drive letter) so Windows assigns exactly one drive letter for the whole card.
+Stock ships all eight partitions as Microsoft Basic Data with attributes 0,
+which is why a stock-derived card triggers a format prompt per partition.
 
 Layout conventions mirror the stock table exactly: header at LBA 1, 8 entries
 of 128 bytes at LBA 2-3, first usable LBA 4; backup entries at total-3..-2,
 backup header at total-1, last usable total-4.
 
-Usage: mkgpt.py IMAGE TOTAL_SECTORS P5_SECTORS P6_SECTORS P7_SECTORS
+Usage: mkgpt.py IMAGE TOTAL_SECTORS SLOT_SECTORS UDISK_SECTORS
 """
 import struct
 import sys
@@ -23,18 +38,27 @@ ENTRY_SIZE = 128
 PRIMARY_TYPE_GUID = uuid.UUID("ebd0a0a2-b9e5-4433-87c0-68b6b72699c7")
 PRIMARY_UNIQUE_GUID = uuid.UUID("07c2a8fa-761b-41cc-bc12-ca43eafb5ee5")
 
+# Bit 62 "hidden" + bit 63 "no drive letter".
+HIDDEN_ATTRIBUTES = 0xC000000000000000
+
+SOURCE_NAMES = ["special", "boot-resource", "env", "boot", "rootfs", "appfs", "UDISK"]
+OUTPUT_NAMES = ["special", "boot-resource", "env", "boot", "rootfs", "UDISK", "primary"]
+
 
 def die(msg):
     sys.exit(f"mkgpt: {msg}")
 
 
+def name_of(entry):
+    return entry[56:128].decode("utf-16-le").rstrip("\0")
+
+
 def main():
-    img_path, total, p5s, p6s, p7s = (
+    img_path, total, slot_sectors, udisk_sectors = (
         sys.argv[1],
         int(sys.argv[2]),
         int(sys.argv[3]),
         int(sys.argv[4]),
-        int(sys.argv[5]),
     )
 
     with open(img_path, "r+b") as f:
@@ -47,42 +71,58 @@ def main():
         if n_entries != NUM_ENTRIES or esz != ENTRY_SIZE:
             die(f"unexpected entry table shape: {n_entries}x{esz}")
         f.seek(entries_lba * SECTOR)
-        entries = [bytearray(f.read(ENTRY_SIZE)) for _ in range(NUM_ENTRIES)]
+        source = [bytearray(f.read(ENTRY_SIZE)) for _ in range(NUM_ENTRIES)]
 
         # StockMod BASE archives deliberately omit p8 and the backup GPT. The
         # known-good H700 full-card layout uses this stable identity for the
         # user-visible `primary` FAT partition; restore it only when slot 8 is
         # completely empty. Full images retain their source entry unchanged.
-        if entries[7] == bytearray(ENTRY_SIZE):
-            entries[7][:16] = PRIMARY_TYPE_GUID.bytes_le
-            entries[7][16:32] = PRIMARY_UNIQUE_GUID.bytes_le
-            entries[7][56 : 56 + len("primary".encode("utf-16-le"))] = "primary".encode(
+        if source[7] == bytearray(ENTRY_SIZE):
+            source[7][:16] = PRIMARY_TYPE_GUID.bytes_le
+            source[7][16:32] = PRIMARY_UNIQUE_GUID.bytes_le
+            source[7][56 : 56 + len("primary".encode("utf-16-le"))] = "primary".encode(
                 "utf-16-le"
             )
 
-        starts = [struct.unpack_from("<Q", e, 32)[0] for e in entries]
-        names = [e[56:128].decode("utf-16-le").rstrip("\0") for e in entries]
-        if names[:5] != ["special", "boot-resource", "env", "boot", "rootfs"]:
-            die(f"unexpected partition names: {names}")
+        source_names = [name_of(e) for e in source]
+        if source_names[:7] != SOURCE_NAMES:
+            die(f"unexpected source partition names: {source_names}")
 
-        last_usable = total - 4
-        # p1-p4 keep start+end; p5 keeps start with new size; p6/p7 packed
-        # after; p8 fills to last usable.
+        # Drop `appfs`; shift UDISK and primary down one slot so every
+        # partition keeps its stock name/type GUID/unique GUID.
+        entries = source[:5] + [source[6], source[7], bytearray(ENTRY_SIZE)]
+        names = [name_of(e) for e in entries]
+        if names[:7] != OUTPUT_NAMES:
+            die(f"unexpected output partition names: {names}")
+
+        starts = [struct.unpack_from("<Q", e, 32)[0] for e in entries]
         ends = [0] * NUM_ENTRIES
         new_starts = list(starts)
+
+        # p1-p4 keep their stock start and end exactly.
         ends[0:4] = [struct.unpack_from("<Q", entries[i], 40)[0] for i in range(4)]
-        ends[4] = starts[4] + p5s - 1
-        new_starts[5] = ends[4] + 1
-        ends[5] = new_starts[5] + p6s - 1
+
+        slot_base = starts[4]
+        if slot_base != ends[3] + 1:
+            die("rootfs does not start immediately after the boot partition")
+
+        # Slot A keeps the stock rootfs start; slot B is the identically sized
+        # region straight after it and is intentionally left unallocated.
+        ends[4] = slot_base + slot_sectors - 1
+        new_starts[5] = slot_base + 2 * slot_sectors
+        ends[5] = new_starts[5] + udisk_sectors - 1
         new_starts[6] = ends[5] + 1
-        ends[6] = new_starts[6] + p7s - 1
-        new_starts[7] = ends[6] + 1
-        ends[7] = last_usable
-        if new_starts[7] >= ends[7]:
+        last_usable = total - 4
+        ends[6] = last_usable
+        if new_starts[6] >= ends[6]:
             die("image too small for the requested partition sizes")
 
-        for i, e in enumerate(entries):
-            struct.pack_into("<QQ", e, 32, new_starts[i], ends[i])
+        for i in range(NUM_ENTRIES - 1):
+            struct.pack_into("<QQ", entries[i], 32, new_starts[i], ends[i])
+            # `primary` stays a plain Basic Data volume so desktops mount it;
+            # everything else is hidden and gets no drive letter.
+            attributes = 0 if names[i] == "primary" else HIDDEN_ATTRIBUTES
+            struct.pack_into("<Q", entries[i], 48, attributes)
 
         table = b"".join(bytes(e) for e in entries)
         table_crc = zlib.crc32(table) & 0xFFFFFFFF
@@ -117,11 +157,16 @@ def main():
         f.seek(0)
         f.write(mbr)
 
-    for i in range(NUM_ENTRIES):
+    for i in range(NUM_ENTRIES - 1):
         print(
             f"p{i+1} {names[i]:<14} start={new_starts[i]:>9} "
             f"end={ends[i]:>9} sectors={ends[i]-new_starts[i]+1:>9}"
         )
+    print(
+        f"-- {'(slot B)':<14} start={slot_base + slot_sectors:>9} "
+        f"end={slot_base + 2 * slot_sectors - 1:>9} sectors={slot_sectors:>9} "
+        "unallocated"
+    )
 
 
 if __name__ == "__main__":

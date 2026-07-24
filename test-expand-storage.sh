@@ -11,7 +11,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
   -v "$HERE/overlay/usr/sbin/expand-storage":/test/expand-storage:ro \
   alpine:3.20 sh -euc '
   mknod /dev/mmcblk0 b 7 0
-  mknod /dev/mmcblk0p8 b 7 1
+  mknod /dev/mmcblk0p7 b 7 1
 
   make_stub() {
     path="$1"; shift
@@ -22,7 +22,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
   make_stub /usr/local/bin/mkfs.vfat "printf \"%s\\n\" \"\$*\" >> /tmp/mkfs.log"
   make_stub /usr/local/bin/partprobe "exit 0"
 
-  # Subsequent boot: gptgrow reports that p8 already fills the disk. There
+  # Subsequent boot: gptgrow reports that p7 already fills the disk. There
   # must be no expansion splash and no format attempt.
   make_stub /usr/sbin/gptgrow "exit 1"
   rm -f /tmp/splash.log /tmp/mkfs.log
@@ -30,12 +30,12 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
   test ! -e /tmp/splash.log
   test ! -e /tmp/mkfs.log
 
-  # First boot: display the message only after gptgrow confirms it changed p8.
+  # First boot: display the message only after gptgrow confirms it changed p7.
   make_stub /usr/sbin/gptgrow "exit 0"
   rm -f /tmp/splash.log /tmp/mkfs.log
   /bin/sh /test/expand-storage
   grep -qx -- "--important 45 EXPANDING STORAGE" /tmp/splash.log
-  grep -qx -- "-F 32 -n BASEOS /dev/mmcblk0p8" /tmp/mkfs.log
+  grep -qx -- "-F 32 -n BASEOS /dev/mmcblk0p7" /tmp/mkfs.log
 
   # A real gptgrow error is neither an already-expanded card nor a reason to
   # display progress or format anything.

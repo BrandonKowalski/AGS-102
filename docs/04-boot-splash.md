@@ -65,11 +65,25 @@ hand-off are discrete, synchronous pill overlays:
 | condition | pill copy | progress track |
 |---|---|---|
 | growing + formatting storage | `EXPANDING STORAGE` | boot stage 45 |
+| writing + verifying a system update | `UPDATING SYSTEM` | boot stages 50 → 95 |
+| system update rejected or unwritable | `UPDATE FAILED` | none |
+| restoring the previous system slot | `RESTORING SYSTEM` | none |
 | first frontend install | `INSTALLING FRONTEND` | boot stage 85 |
 | frontend update | `UPDATING FRONTEND` | boot stage 85 |
 | card unavailable | `INSERT SD CARD` | none |
 | installer cannot run | `INSTALL FAILED` | none |
 | no installed frontend or installer | `ADD FRONTEND TO SD CARD` | none |
+
+The system-update pills carry **no version number**: version badges are an explicit
+anti-reference in [PRODUCT.md](../PRODUCT.md), and the pill names the work in
+progress, not the release. Stage 50 places a system update after storage expansion
+and before any frontend install, matching the real boot order.
+
+`UPDATING SYSTEM` is the one pill whose track **moves**, and §5 explains why that is
+not a contradiction. It advances 50 → 80 as the new slot is written and 80 → 92 as it
+is read back and hashed, in proportion to bytes actually committed, then 95 at the
+slot flip. Without it the screen sits unchanged for about a minute on a 512 MiB slot
+and looks hung — which is exactly what a status surface exists to prevent.
 
 The labels name the current work or the next action in plain language. Once a frontend
 is installed, an ordinary boot performs zero splash processes and zero framebuffer
@@ -98,3 +112,23 @@ animation during install — a single static pill, and every `fbsplash` call in 
 session is discrete/synchronous.** The ~1 min first-install wait with a clear label is
 acceptable. General rule: never leave a background process drawing to
 `/dev/fb0` once the frontend can own the screen.
+
+### Why the system-update bar does not break this rule
+
+`baseos-update` moves its track, which looks like the thing this section forbids. It
+is not, on three counts:
+
+- **No background process.** The write and the read-back are chunked, and the pill is
+  repainted synchronously between chunks. Every `fbsplash` call is still discrete, and
+  none can be in flight when the operation ends. The rule the install bug produced was
+  about orphaned background draws, not about the track ever changing value.
+- **The frontend cannot own the screen yet.** A system update runs in `rcS`, long
+  before `nextui-session`, and always ends in either a reboot or a terminal
+  `UPDATE FAILED` pill. There is no first frame to race.
+- **It is real progress, not animation.** Each step corresponds to megabytes actually
+  written and fsync'd, or read back and hashed — satisfying "make every visible boot
+  transition correspond to real progress" in [PRODUCT.md](../PRODUCT.md) rather than
+  working around it.
+
+The distinction worth keeping: a bar may move when something measurable moved it. It
+may never move on a timer.

@@ -6,7 +6,7 @@
 |---|---|
 | Regenerated-GPT boot (boot0/U-Boot/kernel accept it) | ✅ on a 64 GB card |
 | Minimal rootfs mounts + BusyBox init → NextUI | ✅ cold boot 7.18 s |
-| First-boot expand-to-fill (p8 68 MB → 62.8 GB) | ✅ |
+| First-boot expand-to-fill (FAT partition 68 MB → 62.8 GB) | ✅ |
 | NextUI install + launch on Base OS | ✅ (`installer exited 0`, ~48 s) — validated with the earlier staged-payload flow; the current user-copies-frontend flow reuses the same install path but is not yet re-validated on hardware |
 | Seamless static bootlogo → frontend hand-off | ✅ |
 | Deep sleep (real suspend-to-RAM, ~0 drain / 35 min) | ✅ |
@@ -17,6 +17,13 @@
 | HDMI output | ⏳ not retested on base OS |
 | Exact deep-sleep standby µA (long sleep) | ⏳ counter too coarse for 35 min |
 | Other StockMod H700 targets | 🧪 target-aware images generated/verified; BaseOS hardware validation pending |
+| 1.0 seven-partition A/B layout | ✅ boots on RG40XXV; NextUI reports BaseOS 1.0.0 |
+| Hidden GPT attributes accepted by the boot chain | ✅ (booted with attributes set) |
+| One drive letter / no format prompts on Windows | ⏳ not yet checked on a Windows machine |
+| `.bosupd` update applied on hardware | ✅ 1.0.0 → 1.0.1 on RG40XXV: write + verify 50.7 s, flip, reboot, trial boot 1 of 3, confirmed |
+| Rootfs running from slot B | ✅ running at LBA 1482752 — partition 5 boots from either offset |
+| `/data` survives a slot flip | ✅ the update log written before the flip was still there after it |
+| Update trial + confirm on hardware | ✅ armed on the first boot of the new slot and cleared when the session started |
 
 > **Standalone-repo changes not yet hardware-validated:** the split from NextUI moved
 > two responsibilities into Base OS — (a) the frontend payload is no longer baked in
@@ -39,7 +46,7 @@ layer, and each is now guarded:
    ext4. → keep the journal. (Root cause found by extracting p4 and reading the
    initramfs `/init` — the real boot contract.)
 3. **`/init` must be a regular file.** The 2015 `switch_root` fails on our
-   `/init → sbin/init` symlink chain. → `/init` is a real staged-marker script.
+   `/init → sbin/init` symlink chain. → `/init` is a real script, not a symlink.
 4. **`expand-storage` not executable.** Shipped 0644; `rcS` guards the call with
    `[ -x ]`, so it silently never ran → first boot `NO SYSTEM FOUND`. → added to the
    rootfs chmod list **and a build guard that fails the build if any boot-critical
@@ -51,13 +58,22 @@ layer, and each is now guarded:
 Debug technique that cracked the silent boots: **boot stock with the base-OS card in
 the TF2 slot** — that runs our GPT / ext4 / binaries against the *real* kernel without
 flashing, so `mount`, `chroot`, and the vendor initramfs's exact mount options can be
-tested live. Plus raw markers `dd`'d into the sacrificial p6 stub sector, ext4
+tested live. Plus (at the time) raw markers `dd`'d into the sacrificial `appfs` stub
+sector — that partition is gone as of 1.0, its region being the second rootfs slot —
+ext4
 superblock mount-counts, and `fbsplash` breadcrumbs as boot-stage forensics.
 
 ## 3. Build / debug gotchas worth remembering
 
 - ext4 for the 4.9 kernel: 4.9-safe feature mask **with** a journal.
-- FAT p8: leave 1 MiB headroom so `mkfs.vfat` can't overrun into the backup GPT.
+- FAT `primary`: leave 1 MiB headroom so `mkfs.vfat` can't overrun into the backup GPT.
+- The GPT is the only thing that selects which bytes become the root filesystem, and
+  it is entirely ours to write. `root=/dev/mmcblk0p5` names a *number*, not an
+  address — that one fact is what buys A/B updates on a bootloader with no A/B
+  support (see [07](07-partition-layout-and-updates.md)).
+- Stock ships all eight partitions as Microsoft Basic Data with attributes `0`, which
+  is precisely why a stock-derived card makes Windows offer to format five of them.
+  Attribute bits 62/63 on everything but the user FAT volume fix it at zero cost.
 - BusyBox has `mkfs.vfat`/`mkdosfs`/`partprobe`/`blockdev`/`killall` applets — no need
   to harvest dosfstools for the runtime.
 - BusyBox `cp` has no `--sparse`; use plain `cp` + `truncate` for sparse test images.
@@ -75,6 +91,10 @@ superblock mount-counts, and `fbsplash` breadcrumbs as boot-stage forensics.
 
 ## 4. Remaining polish / roadmap
 
+- **Hardware-validate 1.0.** Three questions, one flash each: do the GPT attribute
+  bits boot; may partition 5 start anywhere (flash an image built with the rootfs at
+  the slot-B offset); does the seven-partition table boot. Then apply a real
+  `.bosupd`. Until then 1.0 images are offline-verified only.
 - **rootfs read-only.** The vendor initramfs mounts p5 rw; remount `ro` at the end of
   `rcS` for power-loss resilience (writable state is already tmpfs + `/data` + FAT).
 - **HDMI + BT-audio** end-to-end validation on base OS.
@@ -86,7 +106,11 @@ superblock mount-counts, and `fbsplash` breadcrumbs as boot-stage forensics.
 - **Silence boot breadcrumbs / release vs dev image split** (serial getty, dropbear
   SSH/sftp are dev conveniences).
 - **PortMaster** later: the kernel already has squashfs + loop + overlay built in;
-  glibc 2.35 and an `/etc/os-release` identity remain to be decided.
+  glibc 2.35 is in place and `/etc/os-release` is now generated from `VERSION`. The
+  512 MiB rootfs slot was sized with this in mind — 100 MB used, 5× headroom.
+- **`/data` schema migration.** There is no versioning of `/data` yet. Acceptable
+  while its contents are regenerable; needs a policy before anything in there becomes
+  precious.
 
 ## 5. Relationship to frontends
 

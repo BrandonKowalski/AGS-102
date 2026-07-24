@@ -23,6 +23,14 @@ extracted first.
 ./flash-card.sh rg40xxv diskN
 ```
 
+The release version lives in the repo-root `VERSION` file; `build-rootfs.sh` bakes it
+and `git describe` into `/etc/baseos-release` and `/etc/os-release`. To also produce
+the update payload users copy onto their card:
+
+```sh
+./build-update.sh rg40xxv
+```
+
 The image is written to `work/rg40xxv/baseos-rg40xxv.img`. To prepare and build in
 one command:
 
@@ -55,7 +63,10 @@ Run checks relevant to the files changed. The main test entry points are:
 ./tests/test-boot-splash-policy.sh
 ./tests/test-baseos-ntp.sh
 ./tests/test-timedatectl.sh
+./tests/test-gpt-slot.sh
+./tests/test-update-apply.sh
 ./test-boot-qemu.sh rg40xxv
+./test-update-roundtrip.sh rg40xxv   # needs build-image.sh + build-update.sh first
 ./validate-on-device.sh rg40xxv DEVICE_IP ROOT_PASSWORD
 ```
 
@@ -83,3 +94,4 @@ enforced by `validate-on-device.sh`.
 - [Boot logo and exceptional status UI](docs/04-boot-splash.md)
 - [Runtime, boot timing, power, and networking](docs/05-runtime-power-network.md)
 - [Hardware status and lessons learned](docs/06-status-and-lessons.md)
+- [Partition layout and A/B system updates](docs/07-partition-layout-and-updates.md)

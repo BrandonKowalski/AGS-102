@@ -28,7 +28,7 @@ partitions. StockMod `BASE` archives use a deliberate compact form: they end exa
 after p7, leave entry 8 empty and retain the primary header's original full-disk
 geometry. That form is accepted only when p1–p7 have the exact H700 names and the file
 ends precisely at p7; arbitrary truncation still fails closed. The build restores the
-known H700 `primary` p8 identity when it writes a complete, internally consistent GPT.
+known H700 `primary` identity when it writes a complete, internally consistent GPT.
 Preparation copies everything before p5 into `boot-prefix.img` and extracts the
 allowlisted userspace from p5. Extraction happens
 through `debugfs`; a static BusyBox tar runs chrooted inside the extracted root so
@@ -65,6 +65,7 @@ FIRMWARE=/path/to/RG40XXV-...-mod-....img
 ./build-rootfs.sh "$TARGET"
 ./test-boot-qemu.sh "$TARGET"
 ./build-image.sh "$TARGET"
+./build-update.sh "$TARGET"                # optional: the .bosupd update payload
 ```
 
 The flashable result is `work/<target>/baseos-<target>.img`. Preparation and build
@@ -73,7 +74,8 @@ artifacts stay isolated in the same target directory:
 - `source.json` — source identity, hash, GPT geometry and derived hashes;
 - `boot-prefix.img` and `stock-harvest.tar` — prepared StockMod inputs;
 - `rootfs.tar` and `closure-report.txt` — assembled and checked userspace;
-- `bootlogo.bmp` and `baseos-<target>.img` — final target-specific outputs.
+- `bootlogo.bmp` and `baseos-<target>.img` — final target-specific outputs;
+- `baseos-<target>-<version>.bosupd` — the update payload, if `build-update.sh` ran.
 
 To list removable media and then flash the image on macOS:
 
@@ -118,19 +120,24 @@ short equivalent of the complete recipe in section 2.
 ## 4. Image geometry and verification
 
 The source p5 start remains fixed because the vendor environment boots
-`/dev/mmcblk0p5`. BaseOS then packs a 512 MiB rootfs, 16 MiB empty appfs stub,
-128 MiB userdata filesystem and 64 MiB initial FAT32 partition, plus backup-GPT
-headroom. `expand-storage` grows p8 to the card on first boot.
+`/dev/mmcblk0p5`, and it doubles as rootfs slot A. BaseOS then packs a 512 MiB
+rootfs slot, an identically sized unallocated slot B, a 128 MiB userdata filesystem
+and a 64 MiB initial FAT32 partition, plus backup-GPT headroom — 1.4 GB in total,
+which zips to about 58 MB. `expand-storage` grows the FAT partition to the card on
+first boot.
 
 Every image build checks:
 
 - preparation size/SHA-256 values and target identity;
 - GPT CRCs, names, GUIDs, starts and non-overlap;
+- exactly seven partitions, with `UDISK` two slots past the rootfs start;
+- the hidden attribute bits on everything except the user-visible `primary`;
 - the raw boot region plus p1/p3/p4 against the prepared StockMod bytes;
-- p5/p6/p7 with read-only `e2fsck`;
-- `/init`, `gptgrow`, executable `expand-storage`, and exact target identity in p5;
+- rootfs slot A and `UDISK` with read-only `e2fsck`, and slot B empty;
+- `/init`, `gptgrow`, `gptslot`, executable `expand-storage` and `baseos-update`, and
+  exact target identity in the rootfs;
 - the embedded bootlogo bytes and native dimensions;
-- FAT32 readability on p8.
+- FAT32 readability on `primary`.
 
 The synthetic importer suite covers valid preparation, deterministic output,
 dereferenced relative/absolute symlinks, directories, invalid GPT magic, incorrect

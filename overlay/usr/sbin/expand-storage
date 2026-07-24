@@ -1,22 +1,22 @@
 #!/bin/sh
-# First-boot expand-to-fill for the boot card's FAT data partition (p8).
+# First-boot expand-to-fill for the boot card's FAT data partition (p7).
 #
-# BaseOS ships p8 small and empty and carries NO frontend payload — it is a
-# standalone OS, not tied to any one frontend. On first boot it grows p8's GPT
+# BaseOS ships p7 small and empty and carries NO frontend payload — it is a
+# standalone OS, not tied to any one frontend. On first boot it grows p7's GPT
 # entry to fill the whole card and gives it a fresh, empty FAT32; the user then
 # copies their frontend (NextUI or a custom one) onto the card. In-place FAT
 # growth needs tools we don't ship (fatresize/libparted), so a fresh mkfs at
 # full size is used instead — safe here because the card is empty.
 #
-# Idempotent: once p8 fills the disk it is never reformatted again, so a
+# Idempotent: once p7 fills the disk it is never reformatted again, so a
 # frontend the user has copied on is never touched.
 
 DISK=/dev/mmcblk0
-P8=/dev/mmcblk0p8
+CARD=/dev/mmcblk0p7
 LOG=/tmp/expand.log
 README=/usr/share/baseos/card-readme.txt
 
-# Mirror to persistent /data (p7, mounted by rcS before us) so a failed expand
+# Mirror to persistent /data (p6, mounted by rcS before us) so a failed expand
 # is diagnosable after a power-off — /tmp is volatile.
 log() {
 	line="$(cut -d' ' -f1 /proc/uptime) expand: $*"
@@ -25,10 +25,10 @@ log() {
 }
 splash() { [ -x /usr/bin/baseos-splash ] && /usr/bin/baseos-splash --important "$@" 2>/dev/null; }
 
-[ -b "$P8" ] || { log "no $P8"; exit 0; }
+[ -b "$CARD" ] || { log "no $CARD"; exit 0; }
 [ -x /usr/sbin/gptgrow ] || { log "no gptgrow"; exit 0; }
 
-# Grow p8 to fill the card + live-resize it in the kernel (BLKPG). Idempotent:
+# Grow p7 to fill the card + live-resize it in the kernel (BLKPG). Idempotent:
 # exit 0 = grew (fresh card), 1 = already fills the disk, 2 = error. Only a
 # freshly-grown partition is (re)formatted, so a card that already fills the
 # disk — i.e. one the user has already set up — is left completely untouched.
@@ -36,21 +36,21 @@ splash() { [ -x /usr/bin/baseos-splash ] && /usr/bin/baseos-splash --important "
 grew=$?
 case "$grew" in
 	0) splash 45 "EXPANDING STORAGE" ;;
-	1) log "p8 already fills the disk; leaving it untouched"; exit 0 ;;
-	*) log "gptgrow failed (exit $grew); leaving p8 untouched"; exit 1 ;;
+	1) log "p7 already fills the disk; leaving it untouched"; exit 0 ;;
+	*) log "gptgrow failed (exit $grew); leaving p7 untouched"; exit 1 ;;
 esac
 partprobe "$DISK" >> "$LOG" 2>&1 || blockdev --rereadpt "$DISK" >> "$LOG" 2>&1 || true
 
 # Fresh empty FAT32 across the whole (now full-size) partition.
-if ! mkfs.vfat -F 32 -n BASEOS "$P8" >> "$LOG" 2>&1; then
-	log "mkfs.vfat failed; leaving p8 as-is"
+if ! mkfs.vfat -F 32 -n BASEOS "$CARD" >> "$LOG" 2>&1; then
+	log "mkfs.vfat failed; leaving p7 as-is"
 	exit 1
 fi
 
 # Leave a note so the user knows how to add a frontend.
-dst=/tmp/.p8new
+dst=/tmp/.cardnew
 mkdir -p "$dst"
-if mount -t vfat -o rw "$P8" "$dst" 2>/dev/null; then
+if mount -t vfat -o rw "$CARD" "$dst" 2>/dev/null; then
 	[ -f "$README" ] && cp "$README" "$dst/README.txt"
 	sync
 	umount "$dst" 2>/dev/null

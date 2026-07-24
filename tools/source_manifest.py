@@ -9,7 +9,7 @@ import shlex
 import struct
 from pathlib import Path
 
-from prepare_stock import parse_gpt, sha256_file, sha256_range
+from prepare_stock import BASEOS_NAMES, parse_gpt, sha256_file, sha256_range
 
 
 def load(path: Path, expected_target: str) -> dict:
@@ -47,7 +47,7 @@ def verify_prepared(data: dict, directory: Path) -> None:
 def verify_composed(data: dict, prefix: Path, image: Path, logo: Path) -> None:
     verify_prepared(data, prefix.parent)
     source_layout = data["layout"]
-    output_layout = parse_gpt(image)
+    output_layout = parse_gpt(image, BASEOS_NAMES)
 
     # All four boot partitions retain their GPT identity and geometry. p2 is
     # not byte-identical because bootlogo.bmp is intentionally replaced.
@@ -77,6 +77,23 @@ def verify_composed(data: dict, prefix: Path, image: Path, logo: Path) -> None:
     output_root = partition(output_layout, 5)
     if source_root["start_sector"] != output_root["start_sector"]:
         raise ValueError("root partition start changed")
+
+    # A/B geometry: `rootfs` is slot A, an identically sized unallocated slot B
+    # follows it, and /data starts exactly two slots in. gptslot derives the
+    # same relationship at runtime and refuses anything else.
+    output_data = partition(output_layout, 6)
+    slot_sectors = output_root["sector_count"]
+    if output_data["start_sector"] != output_root["start_sector"] + 2 * slot_sectors:
+        raise ValueError("UDISK does not start exactly two rootfs slots in")
+
+    # Only the user-visible FAT volume may claim a desktop drive letter.
+    for item in output_layout["partitions"]:
+        expected = 0 if item["name"] == "primary" else 0xC000000000000000
+        if item["attributes"] != expected:
+            raise ValueError(
+                f"partition {item['number']} ({item['name']}) has attributes "
+                f"{item['attributes']:#x}, expected {expected:#x}"
+            )
 
     bmp = logo.read_bytes()[:26]
     if len(bmp) < 26 or bmp[:2] != b"BM":

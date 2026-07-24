@@ -23,6 +23,17 @@ chk "running the base OS (/etc/baseos-release)" "grep -q BASEOS=1 /etc/baseos-re
 chk "exact BaseOS target ($BASEOS_EXPECTED_TARGET)" "grep -qx BASEOS_TARGET=$BASEOS_EXPECTED_TARGET /etc/baseos-release"
 chk "no systemd running"                        "! pidof systemd"
 chk "busybox is init (PID 1)"                   "grep -q busybox /proc/1/comm || readlink /proc/1/exe | grep -q busybox"
+chk "release version recorded"                  "grep -q '^BASEOS_VERSION=' /etc/baseos-release"
+chk "os-release agrees with baseos-release"     "grep -qx \"VERSION_ID=\$(sed -n 's/^BASEOS_VERSION=//p' /etc/baseos-release)\" /etc/os-release"
+
+echo "=== partition layout & update slots ==="
+chk "seven partitions, not eight"       "test \"\$(grep -c 'mmcblk0p' /proc/partitions)\" -eq 7"
+chk "U-Boot saw the BaseOS names"       "grep -q 'rootfs@mmcblk0p5:UDISK@mmcblk0p6:primary@mmcblk0p7' /proc/cmdline"
+chk "/data is the UDISK partition (p6)" "grep -q '^/dev/mmcblk0p6 /data ' /proc/mounts"
+chk "gptslot accepts this layout"       "/usr/sbin/gptslot /dev/mmcblk0 geometry"
+chk "update engine present"             "test -x /usr/sbin/baseos-update"
+/usr/sbin/gptslot /dev/mmcblk0 geometry 2>/dev/null | sed 's/^/  /'
+/usr/sbin/baseos-update status 2>/dev/null | sed 's/^/  /'
 
 echo "=== boot speed ==="
 for m in rcS-start rcS-done frontend-exec; do

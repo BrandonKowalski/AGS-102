@@ -1,15 +1,13 @@
 #!/bin/sh
 # PID 1 entry point, exec'd by the vendor initramfs switch_root.
-# A regular script (not a symlink): the 2015-era initramfs busybox and the
-# kernel both exec this trivially, and each stage below leaves a raw marker
-# in the sacrificial p6 stub so a frozen boot is diagnosable from any card
-# reader without serial access.
-#   stage A @ sector 8192: this shell is alive (static busybox sh works)
-#   stage B @ sector 8194: about to exec busybox init
-#   (inittab writes its own marker @ sector 8196; rcS logs to the FAT card)
+#
+# A regular script, not a symlink: the 2015-era initramfs busybox chokes on our
+# /init -> sbin/init -> busybox symlink chain (see docs/00 §2).
+#
+# It used to leave raw stage markers in the sacrificial appfs stub so a frozen
+# boot was diagnosable from a card reader. That partition no longer exists —
+# the region became the unallocated A/B rootfs slot — and the markers had done
+# their job during bring-up. Boot forensics now live in /run/boot-*,
+# /data/expand.log and /data/update/log.
 
-echo "BASEOS STAGE-A shell-alive" | /usr/bin/busybox dd of=/dev/mmcblk0p6 bs=512 seek=8192 conv=notrunc 2>/dev/null
-/usr/bin/busybox sync
-echo "BASEOS STAGE-B exec-init" | /usr/bin/busybox dd of=/dev/mmcblk0p6 bs=512 seek=8194 conv=notrunc 2>/dev/null
-/usr/bin/busybox sync
 exec /usr/bin/busybox init

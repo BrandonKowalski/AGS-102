@@ -32,8 +32,9 @@ Four sources, assembled by `build-rootfs.sh` (see [02](02-image-build-and-flash.
    - `ldconfig` (+ `ld.so.conf*`) — the build runs it to generate `ld.so.cache` so the
      multiarch dir resolves
 3. **Static tools built once in a container** — Dropbear for dev SSH/scp, `curl`
-   with a CA bundle for frontend HTTP clients, plus **`fbsplash`** and **`gptgrow`**
-   (see [04](04-boot-splash.md), [03](03-first-boot-and-expand.md)).
+   with a CA bundle for frontend HTTP clients, plus **`fbsplash`**, **`gptgrow`** and
+   **`gptslot`** (see [04](04-boot-splash.md), [03](03-first-boot-and-expand.md),
+   [07](07-partition-layout-and-updates.md)).
 4. **Our overlay** (`overlay/`) — copied last, wins over everything. It includes
    the small service/time compatibility shims needed by NextUI.
 
@@ -54,23 +55,22 @@ The Ubuntu harvest assumes merged-`/usr`, so the rootfs uses it: `/bin → usr/b
 Overlay files that live "in `/sbin`" (e.g. `nextui-session`) are therefore placed in
 `overlay/usr/sbin/`.
 
-## 3. `/init` — a staged-marker probe script
+## 3. `/init` — the PID 1 entry point
 
 The kernel cmdline is `init=/init`. The vendor initramfs `switch_root`s into our
 rootfs and execs `/init`. Our `/init` is a **regular script** (not a symlink — see
-[00](00-boot-chain-and-partitions.md) §2) that:
+[00](00-boot-chain-and-partitions.md) §2) that leaves the bootloader's static logo
+untouched and `exec`s `/usr/bin/busybox init`, which reads `/etc/inittab`.
 
-1. writes a raw liveness marker into the sacrificial p6 stub sector (proves BusyBox
-   `sh` ran even if every later mount fails — pure forensics, see [06](06-status-and-lessons.md));
-2. leaves the bootloader's static logo untouched;
-3. `exec /usr/bin/busybox init`.
-
-BusyBox init then reads `/etc/inittab`.
+It used to write raw stage markers into the sacrificial `appfs` stub sector so a
+frozen boot was diagnosable from a card reader. That partition no longer exists —
+the region became the unallocated A/B rootfs slot — and the markers had already done
+their job during bring-up. Boot forensics now live in `/run/boot-*`,
+`/data/expand.log` and `/data/update/log`.
 
 ## 4. `inittab`
 
 ```
-::sysinit:<raw p6 liveness marker>
 ::sysinit:/etc/init.d/rcS
 ::respawn:/sbin/nextui-session
 ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100   # serial console (harmless without a cable)
@@ -90,17 +90,23 @@ ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100   # serial console (harmless wi
 3. **`insmod mali_kbase.ko` in the background** — nothing needs the GPU until
    NextUI's `GFX_init` ~2 s later, and the insmod costs ~0.7 s; backgrounding it
    overlaps the card mount (see the timing win in [05](05-runtime-power-network.md))
-4. mount p7 (`UDISK`) → `/data` (persistent state); create `/data/{bluetooth,bluealsa,
-   dropbear}`; symlink `/var/lib/bluetooth → /data/bluetooth`; restore the persisted
-   timezone through `/run/localtime`
+4. mount p6 (`UDISK`) → `/data` (persistent state, unaffected by a slot flip); create
+   `/data/{bluetooth,bluealsa,dropbear}`; symlink `/var/lib/bluetooth → /data/bluetooth`;
+   restore the persisted timezone through `/run/localtime`; run `baseos-update
+   boot-check`, which counts trial boots after a system update and restores the
+   previous slot if this one never reaches a frontend session
+   ([07](07-partition-layout-and-updates.md))
 5. restore the entropy seed; `hwclock -s` (background); `insmod 8821cs.ko` (background)
 6. `machine-id`: reuse `/data/machine-id` or generate one; symlink `/etc/machine-id`
    and `/var/lib/dbus/machine-id → /run/machine-id`
 7. **first-boot expand-to-fill** (`expand-storage`, [03](03-first-boot-and-expand.md))
    — runs *before* the card mount; a no-op once the card is provisioned
 8. mount the NextUI card: TF2 (`/dev/mmcblk1p1`) if present, else this card's own
-   `/dev/mmcblk0p8` → `/mnt/sdcard`, plus the `/mnt/SDCARD` compat symlink; write a
+   `/dev/mmcblk0p7` → `/mnt/sdcard`, plus the `/mnt/SDCARD` compat symlink; write a
    boot breadcrumb to the card
+8a. `baseos-update apply` — one failed glob on an ordinary boot; when the user has
+   copied a `*.bosupd` payload onto the card it writes the inactive rootfs slot,
+   verifies it, flips the GPT and reboots ([07](07-partition-layout-and-updates.md))
 9. start dev extras (`/etc/init.d/dev` → dropbear SSH/sftp-server) in the background
 
 No udev, no mdev: devtmpfs auto-creates nodes, SDL runs with
@@ -153,7 +159,7 @@ them. Three shims bridge the gap:
   `/etc/init.d/ntpd`, TG5050 controls the stock `/etc/init.d/S49ntp`, and H700
   delegates through `timedatectl`; NextUI itself does not bundle an NTP daemon.
 - **`/mnt/vendor/ctrl/setBluetooth.sh`** — a POSIX rewrite of the vendor script at the
-  same path (p6 is never mounted over `/mnt/vendor`), so `bt_init.sh` works unchanged:
+  same path (nothing is ever mounted over `/mnt/vendor`), so `bt_init.sh` works unchanged:
   `init` → `insmod rtl_btlpm.ko` + `rtk_hciattach …`; `enable` → `hciconfig hci0 up`.
 
 Device identity is generated from `devices.json` at build time. `/etc/baseos-release`

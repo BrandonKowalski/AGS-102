@@ -9,6 +9,12 @@ LOG=/tmp/nextui-session.log
 INSTALL_FAILED=0
 CARD_MISSING=0
 
+# A frontend session starting is what ends a system-update trial: the OS came
+# up far enough to hand off. Keying it here rather than on the frontend exec is
+# deliberate — a card with no frontend is a perfectly healthy OS, and keying it
+# later would make that state look like a failed update and roll back forever.
+[ -x /usr/sbin/baseos-update ] && /usr/sbin/baseos-update confirm 2>/dev/null
+
 # Log to tmpfs always, and mirror onto the card once it is mounted so boot
 # problems leave forensic evidence readable from any computer.
 log() {
@@ -34,7 +40,7 @@ while ! mountpoint -q "$SD" 2>/dev/null; do
 		CARD_MISSING=1
 		break
 	fi
-	for dev in /dev/mmcblk1p1 /dev/mmcblk0p8; do
+	for dev in /dev/mmcblk1p1 /dev/mmcblk0p7; do
 		[ -b "$dev" ] || continue
 		mount -t vfat -o rw,utf8,noatime,shortname=mixed "$dev" "$SD" 2>/dev/null && break
 		mount -t auto "$dev" "$SD" 2>/dev/null && break

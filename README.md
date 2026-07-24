@@ -20,9 +20,13 @@ Last change: **7.18 → 7.14 s** — static boot logo, ≈40 ms saved.
 ## What BaseOS provides
 
 - A small, fast, purpose-built operating system.
+- In-place updates: copy one file onto the card and reboot. No reflashing, and
+  your ROMs, saves and settings are untouched.
 - Fast hand-off to a frontend. NextUI is first-class today; the OS remains
   frontend-agnostic.
 - First-boot expansion of the data partition to fill the SD card.
+- One volume on the card when you plug it into a computer, not eight — no stray
+  "format this disk?" prompts on Windows.
 - Full support for the handheld's display, sound, controls, networking, HDMI, and
   real suspend-to-RAM.
 - SSH active by default.

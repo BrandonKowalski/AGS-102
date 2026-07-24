@@ -16,6 +16,36 @@ BaseOS will boot up and expand to fill your SD card.
 
 Once it shows **ADD FRONTEND TO SD CARD**, the expansion is complete.
 
+## How to update BaseOS
+
+You only flash once. Every later version is a file you copy onto the card:
+
+1. [Download](https://github.com/pvaibhav/BaseOS/releases) the `.bosupd` file for your
+   device from the new release.
+2. Copy it onto the card your handheld reads — the `BASEOS` volume on a one-card
+   setup, or your NextUI card on a two-card setup. Anywhere in the root folder.
+3. Power the handheld on.
+
+It shows **UPDATING SYSTEM** for about a minute, then restarts into the new version.
+
+Your ROMs, saves, BIOS and settings are not touched. BaseOS installs the update into a
+spare system area and only switches over once it has checked it, so a bad download
+cannot leave you with a handheld that won't start — and if the new version fails to
+start, BaseOS returns to the previous one by itself.
+
+You can leave `.bosupd` files on the card. Each one is only ever applied once, and
+anything older than the version you are running is ignored — so old ones lying around
+cannot downgrade you or get in the way of a new one. Each release page also lists the
+file's SHA-256 checksum if you want to verify your download.
+
+If you copied an update and nothing happened, ask the handheld why over SSH:
+
+```sh
+baseos-update status
+```
+
+It lists every update file it can see and what it decided about each one.
+
 ## How to run NextUI?
 
 You have two options:

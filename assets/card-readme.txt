@@ -20,5 +20,16 @@ boot after that it goes straight to NextUI in a few seconds.
 To run a different frontend, drop its launch payload here instead; the OS
 hand-off contract is documented in the Base OS repo (docs/04, docs/01).
 
+Updating Base OS
+----------------
+
+You never need to reflash to move to a new Base OS version. Copy the release's
+.bosupd file onto this card and power the handheld on. Base OS installs it to
+its spare system slot, checks it, switches over and restarts — about a minute.
+
+Your Roms, Bios, Saves and settings are not touched, and the previous version
+stays on the card: if the new one cannot start, Base OS returns to it by
+itself. You can leave the .bosupd file here; it is only ever applied once.
+
 This card's whole capacity is available now — Base OS expanded it to fill the
 card on first boot.

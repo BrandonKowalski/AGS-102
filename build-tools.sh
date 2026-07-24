@@ -7,6 +7,7 @@
 #   work/tools/ca-certificates.crt (TLS trust store)
 #   work/tools/fbsplash       (framebuffer boot splash)
 #   work/tools/gptgrow        (grow last GPT partition on first boot)
+#   work/tools/gptslot        (A/B root-slot geometry + flip for updates)
 #   work/tools/sftp-server    (OpenSSH sftp subsystem child for dropbear)
 # Must use --platform linux/arm64 so the produced binaries are aarch64 for the
 # handheld (native on Apple Silicon; QEMU on Intel hosts).
@@ -73,11 +74,15 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
 
 # gptgrow: zero-dependency static tool that grows the last GPT partition to
 # fill the card on first boot (see tools/gptgrow.c).
+# gptslot: A/B root-slot arithmetic — derives the slot geometry from the GPT
+# and flips partition 5 between the two halves (see tools/gptslot.c).
 docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   -v "$TOOLS":/out -v "$HERE/tools":/src:ro alpine:3.20 sh -euc '
   apk add -q build-base linux-headers
   gcc -static -O2 -o /out/gptgrow /src/gptgrow.c
   strip /out/gptgrow
+  gcc -static -O2 -I/src -o /out/gptslot /src/gptslot.c
+  strip /out/gptslot
 '
 
 # sftp-server: dropbear 2024.85 ships the sftp subsystem execing
@@ -101,7 +106,8 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out al
 '
 
 file "$TOOLS/busybox" "$TOOLS/dropbearmulti" "$TOOLS/curl" \
-  "$TOOLS/fbsplash" "$TOOLS/gptgrow" "$TOOLS/sftp-server" 2>/dev/null || true
+  "$TOOLS/fbsplash" "$TOOLS/gptgrow" "$TOOLS/gptslot" "$TOOLS/sftp-server" 2>/dev/null || true
+[ -x "$TOOLS/gptslot" ] || { echo "gptslot build did not produce an executable" >&2; exit 1; }
 [ -x "$TOOLS/curl" ] || { echo "curl build did not produce an executable" >&2; exit 1; }
 file "$TOOLS/curl" | grep -q "statically linked" \
   || { echo "curl build is not static" >&2; exit 1; }
