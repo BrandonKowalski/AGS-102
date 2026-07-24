@@ -1,5 +1,5 @@
 #!/bin/sh
-# Development conveniences, started by rcS in the background.
+# Development conveniences (SSH + SFTP), started by rcS in the background.
 # This file is only installed in dev-flavour images (build-rootfs.sh).
 
 # Persistent dropbear host keys on /data.

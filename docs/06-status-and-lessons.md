@@ -11,7 +11,7 @@
 | Seamless bootlogo → fbsplash illumination | ✅ |
 | Deep sleep (real suspend-to-RAM, ~0 drain / 35 min) | ✅ |
 | WiFi unaided bring-up + stable association | ✅ (validated when the frontend's `wifi_init.sh` did the wait; the Base-OS-owned `wlan0` bring-up is not yet hardware-validated) |
-| Dropbear SSH over WiFi | ✅ |
+| Dropbear SSH + sftp over WiFi | ✅ (SSH validated; sftp-server wired but not yet re-validated on hardware) |
 | GLES video / input / audio in NextUI | ✅ (NextUI runs; port already validated these) |
 | Bluetooth audio pairing end-to-end | ⏳ daemons run; not yet paired on base OS |
 | HDMI output | ⏳ not retested on base OS |
@@ -63,8 +63,8 @@ superblock mount-counts, and `fbsplash` breadcrumbs as boot-stage forensics.
 - BusyBox `cp` has no `--sparse`; use plain `cp` + `truncate` for sparse test images.
 - Growing a partition while a sibling is mounted needs the **`BLKPG` ioctl**, not
   `partprobe` (which EBUSYs). `gptgrow` does BLKPG.
-- Dropbear has no sftp-server; push with `cat | ssh 'cat > f'` (or `scp -O`), verify
-  with a checksum.
+- Dropbear serves sftp: it execs the static OpenSSH `/usr/libexec/sftp-server` for the
+  `sftp` subsystem (2024.85 default `SFTPSERVER_PATH`), so `sftp`/`scp` work directly.
 - The repo shell is **fish**, which doesn't word-split variables — inline `ssh -o`
   options, never store them in a var.
 - The QEMU smoke test exercises generic userspace, not the vendor kernel or hardware.
@@ -83,8 +83,8 @@ superblock mount-counts, and `fbsplash` breadcrumbs as boot-stage forensics.
   ten supported images with per-target boot partitions, model identity and logos.
   Physical BaseOS validation beyond RG40XXV remains outstanding and must be recorded
   per model rather than inferred from successful image construction.
-- **Silence boot breadcrumbs / release vs dev image split** (serial getty + dropbear
-  are dev conveniences).
+- **Silence boot breadcrumbs / release vs dev image split** (serial getty, dropbear
+  SSH/sftp are dev conveniences).
 - **PortMaster** later: the kernel already has squashfs + loop + overlay built in;
   glibc 2.35 and an `/etc/os-release` identity remain to be decided.
 

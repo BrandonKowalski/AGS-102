@@ -5,6 +5,9 @@
 #   work/tools/dropbearmulti  (static dropbear + dropbearkey + dbclient + scp)
 #   work/tools/curl           (static HTTPS client used by RetroAchievements)
 #   work/tools/ca-certificates.crt (TLS trust store)
+#   work/tools/fbsplash       (framebuffer boot splash)
+#   work/tools/gptgrow        (grow last GPT partition on first boot)
+#   work/tools/sftp-server    (OpenSSH sftp subsystem child for dropbear)
 # Runs entirely in a linux/arm64 container (native on Apple Silicon).
 set -eu
 
@@ -74,11 +77,34 @@ docker run --rm --platform linux/arm64 \
   strip /out/gptgrow
 '
 
+# sftp-server: dropbear 2024.85 ships the sftp subsystem execing
+# SFTPSERVER_PATH=/usr/libexec/sftp-server, so the transport (owned by dropbear)
+# hands each sftp session to this OpenSSH helper. It needs no crypto of its own,
+# so build it without OpenSSL and without zlib for a small static binary.
+docker run --rm --platform linux/arm64 -v "$TOOLS":/out alpine:3.20 sh -euc '
+  apk add -q build-base linux-headers ca-certificates zlib-dev zlib-static
+  OPENSSH_VERSION=10.4p1
+  OPENSSH_SHA256=ef6026dd2aea8d56059638d5d3262902c892ceba9f88395835e0d06d3fb63238
+  cd /tmp
+  wget -q "https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-$OPENSSH_VERSION.tar.gz"
+  echo "$OPENSSH_SHA256  openssh-$OPENSSH_VERSION.tar.gz" | sha256sum -c -
+  tar xf "openssh-$OPENSSH_VERSION.tar.gz"
+  cd "openssh-$OPENSSH_VERSION"
+  ./configure --without-openssl --without-zlib --without-pam LDFLAGS=-static >/dev/null
+  make sftp-server >/dev/null
+  strip sftp-server
+  cp sftp-server /out/sftp-server
+  chmod 755 /out/sftp-server
+'
+
 file "$TOOLS/busybox" "$TOOLS/dropbearmulti" "$TOOLS/curl" \
-  "$TOOLS/fbsplash" "$TOOLS/gptgrow" 2>/dev/null || true
+  "$TOOLS/fbsplash" "$TOOLS/gptgrow" "$TOOLS/sftp-server" 2>/dev/null || true
 [ -x "$TOOLS/curl" ] || { echo "curl build did not produce an executable" >&2; exit 1; }
 file "$TOOLS/curl" | grep -q "statically linked" \
   || { echo "curl build is not static" >&2; exit 1; }
 [ -s "$TOOLS/ca-certificates.crt" ] \
   || { echo "curl CA bundle is missing or empty" >&2; exit 1; }
+[ -x "$TOOLS/sftp-server" ] || { echo "sftp-server build did not produce an executable" >&2; exit 1; }
+file "$TOOLS/sftp-server" | grep -q "statically linked" \
+  || { echo "sftp-server build is not static" >&2; exit 1; }
 ls -lh "$TOOLS"

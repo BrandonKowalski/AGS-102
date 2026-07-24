@@ -52,6 +52,9 @@ chk "SD card mounted (/mnt/sdcard)"    "mountpoint -q /mnt/sdcard"
 chk "nextui.elf running"               "pidof nextui.elf"
 chk "keymon running"                   "pidof keymon.elf"
 
+echo "=== dev services ==="
+chk "sftp-server present + executable"  "test -x /usr/libexec/sftp-server"
+
 echo "=== resources ==="
 echo "  processes: $(ps | wc -l)"
 free | awk "/Mem:/ {printf \"  RAM used: %d/%d MB\n\", (\$2-\$7)/1024, \$2/1024}" 2>/dev/null || free
