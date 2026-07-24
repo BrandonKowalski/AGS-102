@@ -93,6 +93,20 @@ static void put_pixel(uint8_t *fb, struct fb_var_screeninfo *v, struct fb_fix_sc
 	}
 }
 
+// Copy one rectangle between two buffers that share the framebuffer's stride.
+static void blit_rect(uint8_t *dst, const uint8_t *src, struct fb_var_screeninfo *v,
+                      struct fb_fix_screeninfo *f, int x, int y, int w, int h) {
+	int bytes = v->bits_per_pixel / 8;
+	if (x < 0) { w += x; x = 0; }
+	if (y < 0) { h += y; y = 0; }
+	if (x + w > (int)v->xres) w = (int)v->xres - x;
+	if (y + h > (int)v->yres) h = (int)v->yres - y;
+	for (int i = 0; i < h; i++) {
+		size_t off = (size_t)(y + i) * f->line_length + (size_t)x * bytes;
+		memcpy(dst + off, src + off, (size_t)w * bytes);
+	}
+}
+
 static uint32_t get_pixel(uint8_t *fb, struct fb_var_screeninfo *v,
                           struct fb_fix_screeninfo *f, int x, int y) {
 	uint8_t *src = fb + y * f->line_length + x * (v->bits_per_pixel / 8);
@@ -352,11 +366,34 @@ static void render_pill(uint8_t *fb, struct fb_var_screeninfo *vp,
 	int pill_y = H - pill_height - clampi(H / 12, 34, 64);
 	int radius = pill_height / 2;
 
+	// Compose off-screen and present in one blit. Drawing straight into the
+	// mapped framebuffer means the panel is scanning out every intermediate
+	// step: the background fill erases the label, then freetype re-renders it
+	// glyph by glyph, and repeated progress repaints read as a flicker across
+	// the text. One buffer and one memcpy make each repaint atomic to the eye.
+	// (NextUI's show2 does the same thing through SDL — redraw everything into
+	// an off-screen surface, present once — but with a long-lived process,
+	// which §5 of docs/04 rules out here.)
+	int box_x = pill_x - 1, box_y = pill_y - 1;
+	int box_w = pill_width + 2, box_h = pill_height + 2;
+	size_t map_len = f.smem_len ? f.smem_len : (size_t)f.line_length * v.yres;
+	uint8_t *canvas = malloc(map_len);
+	if (canvas)
+		// Seeding the canvas from the framebuffer is load-bearing, not a
+		// wasted read. What goes back is a rectangle, but the pill is a
+		// rounded shape: the corners, and the antialiased edge blended
+		// against them, must already hold the boot-logo pixels or the blit
+		// would stamp a black box around the pill. It is also what keeps
+		// round_rect's alpha blending compositing over the real background.
+		blit_rect(canvas, fb, &v, &f, box_x, box_y, box_w, box_h);
+	else
+		canvas = fb; // Never fail to draw; a visible flicker beats no status.
+
 	// Opaque enough for legibility over arbitrary custom artwork, with a quiet
 	// one-pixel edge that keeps the pill distinct on dark boot logos.
-	round_rect(fb, &v, &f, pill_x, pill_y, pill_width, pill_height,
+	round_rect(canvas, &v, &f, pill_x, pill_y, pill_width, pill_height,
 	           radius, border, 245);
-	round_rect(fb, &v, &f, pill_x + 1, pill_y + 1,
+	round_rect(canvas, &v, &f, pill_x + 1, pill_y + 1,
 	           pill_width - 2, pill_height - 2, radius - 1, panel, 246);
 
 	int progress_height = clampi(pill_height / 18, 3, 4);
@@ -365,11 +402,11 @@ static void render_pill(uint8_t *fb, struct fb_var_screeninfo *vp,
 	int progress_y = pill_y + pill_height - clampi(pill_height / 5, 9, 13);
 	if (show_progress) {
 		int progress_radius = progress_height / 2;
-		round_rect(fb, &v, &f, progress_x, progress_y,
+		round_rect(canvas, &v, &f, progress_x, progress_y,
 		           progress_width, progress_height, progress_radius, track, 255);
 		int fill_width = progress_width * clampi(prog, 0, 100) / 100;
 		if (fill_width > 0)
-			round_rect(fb, &v, &f, progress_x, progress_y,
+			round_rect(canvas, &v, &f, progress_x, progress_y,
 			           fill_width, progress_height, progress_radius, accent, 255);
 	}
 
@@ -378,15 +415,20 @@ static void render_pill(uint8_t *fb, struct fb_var_screeninfo *vp,
 		int tx = pill_x + (pill_width - text_width) / 2;
 		int content_bottom = show_progress ? progress_y - 2 : pill_y + pill_height;
 		int baseline = pill_y + (content_bottom - pill_y) / 2 + font_size * 3 / 8;
-		ft_draw_overlay(fb, &v, &f, face, msg, tx, baseline, tracking, text);
+		ft_draw_overlay(canvas, &v, &f, face, msg, tx, baseline, tracking, text);
 		FT_Done_Face(face);
 		FT_Done_FreeType(lib);
 	} else {
 		int tx = pill_x + (pill_width - text_width) / 2;
 		int content_bottom = show_progress ? progress_y - 2 : pill_y + pill_height;
 		int ty = pill_y + (content_bottom - pill_y - 7 * font_size) / 2;
-		bmp_text(fb, &v, &f, tx, ty, msg, font_size,
+		bmp_text(canvas, &v, &f, tx, ty, msg, font_size,
 		         make_pixel(&v, text[0], text[1], text[2]));
+	}
+
+	if (canvas != fb) {
+		blit_rect(fb, canvas, &v, &f, box_x, box_y, box_w, box_h);
+		free(canvas);
 	}
 }
 
