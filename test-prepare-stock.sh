@@ -4,8 +4,12 @@
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=tools/docker-platform.sh
+. "$HERE/tools/docker-platform.sh"
 
-docker run --rm --platform linux/arm64 -v "$HERE":/src:ro alpine:3.20 sh -euc '
+# Host-native: synthetic prepare tests never execute aarch64 device ELFs.
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
+  -v "$HERE":/src:ro alpine:3.20 sh -euc '
   apk add -q python3 e2fsprogs e2fsprogs-extra busybox-static dosfstools tar
   T=/tmp/baseos-prepare-test
   mkdir -p "$T/root/etc" "$T/root/usr/lib" "$T/root/usr/share/demo"

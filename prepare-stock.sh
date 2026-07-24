@@ -4,6 +4,8 @@
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=tools/docker-platform.sh
+. "$HERE/tools/docker-platform.sh"
 TARGET="${1:?usage: $0 <target> </path/to/stockmod.img>}"
 IMAGE="${2:?usage: $0 <target> </path/to/stockmod.img>}"
 [ "$#" -eq 2 ] || { echo "usage: $0 <target> </path/to/stockmod.img>" >&2; exit 2; }
@@ -16,7 +18,9 @@ IMAGE_DIR="$(cd "$(dirname "$IMAGE")" && pwd)"
 IMAGE_NAME="$(basename "$IMAGE")"
 mkdir -p "$HERE/work/$TARGET"
 
-docker run --rm --platform linux/arm64 \
+# Host-native: prepare only runs python/debugfs/BusyBox path work, not aarch64
+# device ELFs. Explicit host platform avoids a cached arm64 image on Intel.
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
   -v "$IMAGE_DIR":/input:ro \
   -v "$HERE/work":/work \
   -v "$HERE/tools":/tools:ro \

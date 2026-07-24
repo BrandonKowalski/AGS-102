@@ -8,14 +8,17 @@
 #   work/tools/fbsplash       (framebuffer boot splash)
 #   work/tools/gptgrow        (grow last GPT partition on first boot)
 #   work/tools/sftp-server    (OpenSSH sftp subsystem child for dropbear)
-# Runs entirely in a linux/arm64 container (native on Apple Silicon).
+# Must use --platform linux/arm64 so the produced binaries are aarch64 for the
+# handheld (native on Apple Silicon; QEMU on Intel hosts).
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=tools/docker-platform.sh
+. "$HERE/tools/docker-platform.sh"
 TOOLS="$HERE/work/tools"
 mkdir -p "$TOOLS"
 
-docker run --rm --platform linux/arm64 -v "$TOOLS":/out alpine:3.20 sh -euc '
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out alpine:3.20 sh -euc '
   apk add -q busybox-static
   cp /bin/busybox.static /out/busybox
 
@@ -33,7 +36,7 @@ docker run --rm --platform linux/arm64 -v "$TOOLS":/out alpine:3.20 sh -euc '
 # curl: NextUI's HTTP layer invokes the CLI for RetroAchievements. Build it in
 # a clean container so it cannot inherit configure state from another tool.
 # The pinned static binary carries no StockMod or frontend ABI dependency.
-docker run --rm --platform linux/arm64 -v "$TOOLS":/out alpine:3.20 sh -euc '
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out alpine:3.20 sh -euc '
   apk add -q build-base ca-certificates tar xz perl \
     openssl-dev openssl-libs-static zlib-dev zlib-static
   CURL_VERSION=8.21.0
@@ -59,7 +62,7 @@ docker run --rm --platform linux/arm64 -v "$TOOLS":/out alpine:3.20 sh -euc '
 
 # fbsplash: framebuffer boot splash (Lexend wordmark via freetype), see
 # src/fbsplash.c.
-docker run --rm --platform linux/arm64 \
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   -v "$TOOLS":/out -v "$HERE/src":/src:ro alpine:3.20 sh -euc '
   apk add -q build-base linux-headers pkgconf \
     freetype-dev freetype-static zlib-static libpng-static bzip2-static brotli-static
@@ -70,7 +73,7 @@ docker run --rm --platform linux/arm64 \
 
 # gptgrow: zero-dependency static tool that grows the last GPT partition to
 # fill the card on first boot (see tools/gptgrow.c).
-docker run --rm --platform linux/arm64 \
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   -v "$TOOLS":/out -v "$HERE/tools":/src:ro alpine:3.20 sh -euc '
   apk add -q build-base linux-headers
   gcc -static -O2 -o /out/gptgrow /src/gptgrow.c
@@ -81,7 +84,7 @@ docker run --rm --platform linux/arm64 \
 # SFTPSERVER_PATH=/usr/libexec/sftp-server, so the transport (owned by dropbear)
 # hands each sftp session to this OpenSSH helper. It needs no crypto of its own,
 # so build it without OpenSSL and without zlib for a small static binary.
-docker run --rm --platform linux/arm64 -v "$TOOLS":/out alpine:3.20 sh -euc '
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out alpine:3.20 sh -euc '
   apk add -q build-base linux-headers ca-certificates zlib-dev zlib-static
   OPENSSH_VERSION=10.4p1
   OPENSSH_SHA256=ef6026dd2aea8d56059638d5d3262902c892ceba9f88395835e0d06d3fb63238

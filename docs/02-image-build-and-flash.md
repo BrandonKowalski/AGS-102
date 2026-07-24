@@ -1,8 +1,15 @@
 # 02 — Firmware preparation, image build & flash
 
-Everything runs on macOS (Apple Silicon). Linux filesystem work happens inside
-unprivileged `--platform linux/arm64` Alpine containers; the build uses neither sudo,
-loop mounts nor a running handheld.
+Everything runs on macOS. Linux filesystem work happens inside unprivileged
+Alpine containers; the build uses neither sudo, loop mounts nor a running
+handheld. Platform selection lives in `tools/docker-platform.sh`: steps that
+must build or execute aarch64 device binaries (`build-tools.sh`,
+`build-rootfs.sh`) pin `linux/arm64`; preparation, image packing, bootlogo
+generation, the QEMU userspace smoke test, and most synthetic tests pin the
+host CPU (`linux/amd64` on Intel Macs, `linux/arm64` on Apple Silicon) so
+they stay native. The QEMU test still boots an aarch64 guest (kernel fetched
+from Alpine's aarch64 index); only the emulator binary is host-native, which
+avoids nested emulation on Intel.
 
 ## 1. Inputs and targets
 

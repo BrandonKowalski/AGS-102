@@ -5,10 +5,13 @@
 #   overlay/                (our init + config)
 # Output: work/<target>/rootfs.tar + closure report.
 # Everything that must execute aarch64 code (busybox --install, ldconfig,
-# ld.so closure verification) runs in a native linux/arm64 container.
+# ld.so closure verification) runs in a linux/arm64 container (native on Apple
+# Silicon; QEMU on Intel hosts).
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=tools/docker-platform.sh
+. "$HERE/tools/docker-platform.sh"
 TARGET="${1:?usage: $0 <target>}"
 [ "$#" -eq 1 ] || { echo "usage: $0 <target>" >&2; exit 2; }
 eval "$(python3 "$HERE/tools/device_profile.py" shell "$TARGET")"
@@ -24,7 +27,7 @@ done
   || { echo "missing $TOOLS/ca-certificates.crt (run build-tools.sh)"; exit 1; }
 python3 "$HERE/tools/source_manifest.py" verify "$WORK/source.json" "$TARGET"
 
-docker run --rm --platform linux/arm64 \
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   -v "$WORK":/work -v "$TOOLS":/tools:ro \
   -v "$HERE/overlay":/overlay:ro -v "$HERE/assets":/assets:ro \
   -e BASEOS_TARGET="$PROFILE_TARGET" \

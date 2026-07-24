@@ -3,8 +3,11 @@
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=tools/docker-platform.sh
+. "$HERE/tools/docker-platform.sh"
 
-docker run --rm --platform linux/arm64 \
+# Host-native: shell script + stubs only; no aarch64 device binaries.
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
   -v "$HERE/overlay/usr/sbin/expand-storage":/test/expand-storage:ro \
   alpine:3.20 sh -euc '
   mknod /dev/mmcblk0 b 7 0

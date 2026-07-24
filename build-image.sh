@@ -4,6 +4,8 @@
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=tools/docker-platform.sh
+. "$HERE/tools/docker-platform.sh"
 TARGET="${1:?usage: $0 <target>}"
 [ "$#" -eq 1 ] || { echo "usage: $0 <target>" >&2; exit 2; }
 eval "$(python3 "$HERE/tools/device_profile.py" shell "$TARGET")"
@@ -35,7 +37,9 @@ P8_START=$((P7_START + P7_SECTORS))
 TOTAL_SECTORS=$((P8_START + 64 * 2048 + 2048))
 P8_SECTORS=$((TOTAL_SECTORS - 4 - P8_START + 1))
 
-docker run --rm --platform linux/arm64 \
+# Host-native: image compose is mke2fs/mkfs.vfat/GPT/tar only (aarch64 work is
+# earlier). Explicit host platform avoids a cached arm64 image on Intel.
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
   -v "$WORK":/work -v "$HERE/tools":/tools:ro \
   -e TARGET="$TARGET" -e OUT_NAME="$(basename "$OUT")" \
   -e TOTAL_SECTORS="$TOTAL_SECTORS" \

@@ -9,13 +9,17 @@
 set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BASE="$HERE/.."
+# shellcheck source=docker-platform.sh
+. "$HERE/docker-platform.sh"
 TARGET="${1:?usage: $0 <target>}"
 [ "$#" -eq 1 ] || { echo "usage: $0 <target>" >&2; exit 2; }
 eval "$(python3 "$HERE/device_profile.py" shell "$TARGET")"
 OUT="$BASE/work/$TARGET/bootlogo.bmp"
 mkdir -p "$(dirname "$OUT")"
 
-docker run --rm --platform linux/arm64 \
+# Host-native: compiles a host test binary and writes a BMP. Explicit host
+# platform avoids a cached arm64 image on Intel.
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
   -v "$BASE/src":/src:ro -v "$BASE/assets":/assets:ro \
   -v "$BASE/work/$TARGET":/out \
   -e WIDTH="$PROFILE_BOOTLOGO_WIDTH" -e HEIGHT="$PROFILE_BOOTLOGO_HEIGHT" \

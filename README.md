@@ -63,8 +63,12 @@ work/                 build outputs (git-ignored)
 
 ## Quick start
 
-Everything runs on macOS (Apple Silicon); all Linux/root work happens inside a
-`--platform linux/arm64` Alpine container (OrbStack), no sudo or loop mounts.
+Everything runs on macOS; Linux/root work happens inside unprivileged Alpine
+containers (Docker/OrbStack), no sudo or loop mounts. Steps that build or
+execute aarch64 device binaries pin `linux/arm64` (native on Apple Silicon,
+emulated on Intel). Preparation, image compose, bootlogo, and the QEMU
+userspace smoke test pin the host architecture (`linux/amd64` on Intel,
+`linux/arm64` on Apple Silicon) so those steps stay native.
 
 ```sh
 # Extract the StockMod .7z.001/.7z.002 set first; BaseOS consumes the .img.
