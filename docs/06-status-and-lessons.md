@@ -12,6 +12,7 @@
 | Deep sleep (real suspend-to-RAM, ~0 drain / 35 min) | ✅ |
 | WiFi unaided bring-up + stable association | ✅ (validated when the frontend's `wifi_init.sh` did the wait; the Base-OS-owned `wlan0` bring-up is not yet hardware-validated) |
 | Dropbear SSH + sftp over WiFi | ✅ (SSH + sftp-server validated on hardware via Forklift and scp) |
+| adb over USB (charge port, device role) | ⏳ configfs gadget + adbd wired; not yet hardware-validated |
 | GLES video / input / audio in NextUI | ✅ (NextUI runs; port already validated these) |
 | Bluetooth audio pairing end-to-end | ⏳ daemons run; not yet paired on base OS |
 | HDMI output | ✅ hotplug both directions on RG40XXV once `rcS` mounts `debugfs` (§2.7) |
@@ -108,6 +109,16 @@ superblock mount-counts, and `fbsplash` breadcrumbs as boot-stage forensics.
   `partprobe` (which EBUSYs). `gptgrow` does BLKPG.
 - Dropbear serves sftp: it execs the static OpenSSH `/usr/libexec/sftp-server` for the
   `sftp` subsystem (2024.85 default `SFTPSERVER_PATH`), so `sftp`/`scp` work directly.
+- Do **not** try to force the sunxi USB role. Writing `usbc0/otg_role` (e.g.
+  `echo usb_device > otg_role`) **wedges the writer in an uninterruptible D-state** on the
+  4.9.170 vendor kernel — reproduced both with and without a gadget bound, and only a
+  reboot clears the stuck process. Its siblings `usb_device`/`usb_host`/`usb_null` are
+  **0400 read-triggers** — merely `cat`-ing one switches the role (a `cat usb_host` wedged
+  the port). The adb gadget instead binds to the always-present UDC and lets the manager
+  auto-select peripheral mode on cable attach — no role write needed, and charging on the
+  shared port is undisturbed. (Real path is `/sys/devices/platform/soc/usbc0` via the
+  `/sys/bus/platform/devices/usbc0` symlink; the earlier `/sys/devices/platform/usbc0`
+  guess did not exist, which is how the bad `otg_role` write got masked at first.)
 - The repo shell is **fish**, which doesn't word-split variables — inline `ssh -o`
   options, never store them in a var.
 - The QEMU smoke test exercises generic userspace, not the vendor kernel or hardware.
@@ -136,7 +147,7 @@ superblock mount-counts, and `fbsplash` breadcrumbs as boot-stage forensics.
   Physical BaseOS validation beyond RG40XXV remains outstanding and must be recorded
   per model rather than inferred from successful image construction.
 - **Silence boot breadcrumbs / release vs dev image split** (serial getty, dropbear
-  SSH/sftp are dev conveniences).
+  SSH/sftp and adb-over-USB are dev conveniences).
 - **PortMaster** later: the kernel already has squashfs + loop + overlay built in;
   glibc 2.35 is in place and `/etc/os-release` is now generated from `VERSION`. The
   512 MiB rootfs slot was sized with this in mind — 100 MB used, 5× headroom.

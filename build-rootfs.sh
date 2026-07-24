@@ -20,7 +20,7 @@ TOOLS="$HERE/work/tools"
 
 [ -f "$WORK/source.json" ] || { echo "missing $WORK/source.json (run prepare-stock.sh $TARGET IMAGE)"; exit 1; }
 [ -f "$WORK/stock-harvest.tar" ] || { echo "missing $WORK/stock-harvest.tar (run prepare-stock.sh $TARGET IMAGE)"; exit 1; }
-for tool in busybox dropbearmulti curl fbsplash gptgrow gptslot sftp-server; do
+for tool in busybox dropbearmulti curl fbsplash gptgrow gptslot sftp-server adbd; do
   [ -x "$TOOLS/$tool" ] || { echo "missing $TOOLS/$tool (run build-tools.sh)"; exit 1; }
 done
 BASEOS_VERSION="$(tr -d ' \n' < "$HERE/VERSION")"
@@ -114,6 +114,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
             "$R/usr/sbin/baseos-ntp" "$R/usr/sbin/baseos-ntp-notify" \
             "$R/usr/sbin/nextui-session" "$R/usr/sbin/systemctl" \
             "$R/usr/sbin/expand-storage" "$R/usr/sbin/baseos-update" \
+            "$R/usr/sbin/usb-gadget-adb" \
             "$R/mnt/vendor/ctrl/setBluetooth.sh" \
             "$R/usr/share/udhcpc/default.script"
   chmod 600 "$R/etc/shadow"
@@ -123,7 +124,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
            /usr/bin/baseos-splash /usr/bin/timedatectl \
            /usr/sbin/baseos-ntp /usr/sbin/baseos-ntp-notify \
            /usr/sbin/expand-storage /usr/sbin/baseos-update /usr/sbin/systemctl \
-           /mnt/vendor/ctrl/setBluetooth.sh; do
+           /usr/sbin/usb-gadget-adb /mnt/vendor/ctrl/setBluetooth.sh; do
     [ -x "$R$s" ] || { echo "FATAL: $s is not executable in rootfs"; exit 1; }
   done
 
@@ -180,6 +181,10 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   mkdir -p "$R/usr/share/baseos"
   [ -f /assets/card-readme.txt ] && cp /assets/card-readme.txt "$R/usr/share/baseos/card-readme.txt"
 
+  ## 6c. adbd: adb-over-USB dev access, brought up by usb-gadget-adb (init.d/dev).
+  cp /tools/adbd "$R/usr/sbin/adbd"
+  chmod 755 "$R/usr/sbin/adbd"
+
   ## 7. ld.so.cache so the dynamic linker finds the multiarch dir
   chroot "$R" /usr/sbin/ldconfig || chroot "$R" /usr/sbin/ldconfig.real
 
@@ -196,7 +201,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   find "$R/usr/bin" "$R/usr/sbin" "$R/usr/libexec" -type f | while read -r f; do
     head -c4 "$f" | grep -q "^.ELF" || continue
     case "$f" in
-      */busybox|*/dropbearmulti|*/curl|*/fbsplash|*/gptgrow|*/gptslot|*/ldconfig|*/ldconfig.real|*/rtk_hciattach|*/sftp-server) continue ;;
+      */busybox|*/dropbearmulti|*/curl|*/fbsplash|*/gptgrow|*/gptslot|*/ldconfig|*/ldconfig.real|*/rtk_hciattach|*/sftp-server|*/adbd) continue ;;
     esac
     if ! chroot "$R" /usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1 --list \
         "${f#"$R"}" 2>/dev/null | grep -q "=>"; then

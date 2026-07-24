@@ -111,7 +111,9 @@ ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100   # serial console (harmless wi
 8a. `baseos-update apply` — one failed glob on an ordinary boot; when the user has
    copied a `*.bosupd` payload onto the card it writes the inactive rootfs slot,
    verifies it, flips the GPT and reboots ([07](07-partition-layout-and-updates.md))
-9. start dev extras (`/etc/init.d/dev` → dropbear SSH/sftp-server) in the background
+9. start dev extras (`/etc/init.d/dev` → dropbear SSH/sftp-server and the
+   backgrounded adb-over-USB gadget via `usb-gadget-adb`, see
+   [05](05-runtime-power-network.md) §6) in the background
 
 No udev, no mdev: devtmpfs auto-creates nodes, SDL runs with
 `SDL_JOYSTICK_DISABLE_UDEV=1`, BlueZ makes its own uinput nodes, and `dbus-daemon`

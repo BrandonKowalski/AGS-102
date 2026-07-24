@@ -9,6 +9,7 @@
 #   work/tools/gptgrow        (grow last GPT partition on first boot)
 #   work/tools/gptslot        (A/B root-slot geometry + flip for updates)
 #   work/tools/sftp-server    (OpenSSH sftp subsystem child for dropbear)
+#   work/tools/adbd           (Android adb daemon, USB-only, static)
 # Must use --platform linux/arm64 so the produced binaries are aarch64 for the
 # handheld (native on Apple Silicon; QEMU on Intel hosts).
 set -eu
@@ -105,8 +106,45 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out al
   chmod 755 /out/sftp-server
 '
 
+# adbd: Android adb daemon (android-tools 4.2.2+git20130218). Built static for
+# musl, out-of-tree via the Debian adbd makefile, exactly as Buildroot drives it
+# in package/android-tools/android-tools.mk: unpack the Debian packaging into the
+# source tree, apply the Debian quilt series, then apply the Buildroot patch
+# series plus the BaseOS-local patches (see src/adbd-patches). The result serves
+# adb over USB FunctionFS only (no network listener) and stays root.
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
+  -v "$TOOLS":/out -v "$HERE/src/adbd-patches":/patches:ro alpine:3.20 sh -euc '
+  apk add -q build-base linux-headers pkgconf ca-certificates tar xz patch \
+    openssl-dev openssl-libs-static zlib-dev zlib-static bsd-compat-headers
+  AT_VER=4.2.2+git20130218
+  SITE=https://launchpad.net/ubuntu/+archive/primary/+files
+  ORIG_SHA256=9bfba987e1351b12aa983787b9ae4424ab752e9e646d8e93771538dc1e5d932f
+  DEB_SHA256=73c3078de3e44d8a3cadf7a360863c63155d9d558c2f0933cf38ad901a3f5998
+  cd /tmp
+  wget -q "$SITE/android-tools_$AT_VER.orig.tar.xz"
+  wget -q "$SITE/android-tools_$AT_VER-3ubuntu41.debian.tar.gz"
+  echo "$ORIG_SHA256  android-tools_$AT_VER.orig.tar.xz" | sha256sum -c -
+  echo "$DEB_SHA256  android-tools_$AT_VER-3ubuntu41.debian.tar.gz" | sha256sum -c -
+  tar xf "android-tools_$AT_VER.orig.tar.xz"
+  cd android-tools
+  tar xf "/tmp/android-tools_$AT_VER-3ubuntu41.debian.tar.gz"
+  while read -r p; do [ -z "$p" ] && continue
+    patch -g0 -p1 -E -i "debian/patches/$p" >/dev/null
+  done < debian/patches/series
+  for p in /patches/0*.patch; do patch -g0 -p1 -E -i "$p" >/dev/null; done
+  # musl carries crypt() in libc, so drop the -lcrypt the makefile assumes; link
+  # libcrypto statically. Build noise (upstream -Wall warnings) is suppressed.
+  mkdir -p build-adbd
+  make SRCDIR="$PWD" -C build-adbd -f "$PWD/debian/makefiles/adbd.mk" \
+    CC=gcc LDFLAGS=-static LIBS="-lc -lpthread -lz -lcrypto" >/dev/null 2>&1
+  strip build-adbd/adbd
+  cp build-adbd/adbd /out/adbd
+  chmod 755 /out/adbd
+'
+
 file "$TOOLS/busybox" "$TOOLS/dropbearmulti" "$TOOLS/curl" \
-  "$TOOLS/fbsplash" "$TOOLS/gptgrow" "$TOOLS/gptslot" "$TOOLS/sftp-server" 2>/dev/null || true
+  "$TOOLS/fbsplash" "$TOOLS/gptgrow" "$TOOLS/gptslot" "$TOOLS/sftp-server" \
+  "$TOOLS/adbd" 2>/dev/null || true
 [ -x "$TOOLS/gptslot" ] || { echo "gptslot build did not produce an executable" >&2; exit 1; }
 [ -x "$TOOLS/curl" ] || { echo "curl build did not produce an executable" >&2; exit 1; }
 file "$TOOLS/curl" | grep -q "statically linked" \
@@ -116,6 +154,9 @@ file "$TOOLS/curl" | grep -q "statically linked" \
 [ -x "$TOOLS/sftp-server" ] || { echo "sftp-server build did not produce an executable" >&2; exit 1; }
 file "$TOOLS/sftp-server" | grep -q "statically linked" \
   || { echo "sftp-server build is not static" >&2; exit 1; }
+[ -x "$TOOLS/adbd" ] || { echo "adbd build did not produce an executable" >&2; exit 1; }
+file "$TOOLS/adbd" | grep -q "statically linked" \
+  || { echo "adbd build is not static" >&2; exit 1; }
 
 # Record the sources these binaries came from so the build scripts can tell a
 # reusable work/tools from a stale one.

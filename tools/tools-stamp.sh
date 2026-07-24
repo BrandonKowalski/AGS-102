@@ -30,7 +30,7 @@ sha256() {
 cd "$HERE"
 export LC_ALL=C
 
-for source in src/*.c src/*.h tools/*.c tools/*.h; do
+for source in src/*.c src/*.h src/adbd-patches/* tools/*.c tools/*.h; do
 	[ -f "$source" ] || continue
 	printf '%s %s\n' "$source" "$(sha256 "$source" | cut -d' ' -f1)"
 done | sort
