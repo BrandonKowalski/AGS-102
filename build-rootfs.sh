@@ -112,8 +112,8 @@ docker run --rm --platform linux/arm64 \
   done
   ln -sf ../sbin/dropbearmulti "$R/usr/bin/scp"
   # dropbear 2024.85 compiles its default SFTPSERVER_PATH as
-  # /usr/libexec/sftp-server; installing the binary there makes sftp / Finder /
-  # FileZilla work with zero dropbear config changes.
+  # /usr/libexec/sftp-server; installing the binary there makes sftp / Forklift /
+  # scp work with zero dropbear config changes.
   cp /tools/sftp-server "$R/usr/libexec/sftp-server"
   chmod 755 "$R/usr/libexec/sftp-server"
 
