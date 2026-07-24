@@ -89,6 +89,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   chmod 755 "$R/init" \
             "$R/etc/init.d/rcS" "$R/etc/init.d/rcK" "$R/etc/init.d/dev" \
             "$R/usr/bin/baseos-splash" "$R/usr/bin/timedatectl" \
+            "$R/usr/sbin/baseos-ntp" "$R/usr/sbin/baseos-ntp-notify" \
             "$R/usr/sbin/nextui-session" "$R/usr/sbin/systemctl" \
             "$R/usr/sbin/expand-storage" \
             "$R/mnt/vendor/ctrl/setBluetooth.sh" \
@@ -98,6 +99,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   # skipped by its `[ -x ]` guard and fails silently — cost us one flash).
   for s in /init /etc/init.d/rcS /etc/init.d/rcK /usr/sbin/nextui-session \
            /usr/bin/baseos-splash /usr/bin/timedatectl \
+           /usr/sbin/baseos-ntp /usr/sbin/baseos-ntp-notify \
            /usr/sbin/expand-storage /usr/sbin/systemctl \
            /mnt/vendor/ctrl/setBluetooth.sh; do
     [ -x "$R$s" ] || { echo "FATAL: $s is not executable in rootfs"; exit 1; }

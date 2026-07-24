@@ -1,0 +1,125 @@
+#!/bin/sh
+# Persistent BusyBox ntpd supervisor. It is always launched in the background:
+# route/DNS waits and time synchronization must never delay BaseOS startup.
+set -u
+
+STATE_FILE="${BASEOS_NTP_STATE_FILE:-/data/ntp-enabled}"
+PID_FILE="${BASEOS_NTP_PID_FILE:-/run/baseos-ntp.pid}"
+LOCK_DIR="${BASEOS_NTP_LOCK_DIR:-/run/baseos-ntp.lock}"
+SYNC_FILE="${BASEOS_NTP_SYNC_FILE:-/run/baseos-ntp-synchronized}"
+NTPD="${BASEOS_NTP_DAEMON:-/usr/sbin/ntpd}"
+NOTIFY="${BASEOS_NTP_NOTIFY:-/usr/sbin/baseos-ntp-notify}"
+SERVERS="${BASEOS_NTP_SERVERS:-0.pool.ntp.org 1.pool.ntp.org 2.pool.ntp.org}"
+RETRY_SECONDS="${BASEOS_NTP_RETRY_SECONDS:-5}"
+SKIP_NETWORK_CHECK="${BASEOS_NTP_SKIP_NETWORK_CHECK:-0}"
+
+enabled() {
+	value=""
+	if [ -s "$STATE_FILE" ]; then
+		IFS= read -r value < "$STATE_FILE" || true
+	fi
+	[ "$value" = "yes" ]
+}
+
+managed_pid() {
+	pid="$1"
+	case "$pid" in
+		""|*[!0-9]*) return 1 ;;
+	esac
+	kill -0 "$pid" 2>/dev/null || return 1
+
+	# Protect against a stale pidfile killing an unrelated process. /proc is
+	# always mounted on BaseOS; the fallback keeps host-side tests portable.
+	if [ -r "/proc/$pid/cmdline" ]; then
+		cmdline="$(tr '\000' ' ' < "/proc/$pid/cmdline")"
+		case "$cmdline" in
+			*baseos-ntp*) return 0 ;;
+			*) return 1 ;;
+		esac
+	fi
+	return 0
+}
+
+stop_supervisor() {
+	pid=""
+	if [ -s "$PID_FILE" ]; then
+		IFS= read -r pid < "$PID_FILE" || true
+	fi
+	if managed_pid "$pid"; then
+		kill "$pid" 2>/dev/null || true
+	else
+		rm -f "$PID_FILE"
+		rmdir "$LOCK_DIR" 2>/dev/null || true
+	fi
+	rm -f "$SYNC_FILE"
+}
+
+network_ready() {
+	[ "$SKIP_NETWORK_CHECK" = "1" ] && return 0
+	ip route show default 2>/dev/null | grep -q '^default ' || return 1
+	[ -s /etc/resolv.conf ] || return 1
+	grep -q '^[[:space:]]*nameserver[[:space:]]' /etc/resolv.conf
+}
+
+run_supervisor() {
+	enabled || return 0
+	[ -x "$NTPD" ] || {
+		printf 'baseos-ntp: daemon is unavailable: %s\n' "$NTPD" >&2
+		return 1
+	}
+
+	if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+		old_pid=""
+		if [ -s "$PID_FILE" ]; then
+			IFS= read -r old_pid < "$PID_FILE" || true
+		fi
+		managed_pid "$old_pid" && return 0
+		rm -f "$PID_FILE"
+		rmdir "$LOCK_DIR" 2>/dev/null || return 1
+		mkdir "$LOCK_DIR" 2>/dev/null || return 1
+	fi
+
+	printf '%s\n' "$$" > "$PID_FILE"
+	child_pid=""
+
+	cleanup() {
+		trap - EXIT HUP INT TERM
+		if [ -n "$child_pid" ]; then
+			kill "$child_pid" 2>/dev/null || true
+			wait "$child_pid" 2>/dev/null || true
+		fi
+		current_pid=""
+		if [ -s "$PID_FILE" ]; then
+			IFS= read -r current_pid < "$PID_FILE" || true
+		fi
+		[ "$current_pid" != "$$" ] || rm -f "$PID_FILE"
+		rmdir "$LOCK_DIR" 2>/dev/null || true
+		exit 0
+	}
+	trap cleanup EXIT HUP INT TERM
+
+	while enabled; do
+		if network_ready; then
+			set -- -n
+			[ ! -x "$NOTIFY" ] || set -- "$@" -S "$NOTIFY"
+			for server in $SERVERS; do
+				set -- "$@" -p "$server"
+			done
+			"$NTPD" "$@" &
+			child_pid="$!"
+			wait "$child_pid" 2>/dev/null || true
+			child_pid=""
+		fi
+		enabled || break
+		sleep "$RETRY_SECONDS"
+	done
+}
+
+case "${1:-run}" in
+	run) run_supervisor ;;
+	stop) stop_supervisor ;;
+	*)
+		printf 'usage: baseos-ntp [run|stop]\n' >&2
+		exit 2
+		;;
+esac

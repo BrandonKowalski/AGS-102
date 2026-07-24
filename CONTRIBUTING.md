@@ -53,6 +53,7 @@ Run checks relevant to the files changed. The main test entry points are:
 ./test-prepare-stock.sh
 ./test-expand-storage.sh
 ./tests/test-boot-splash-policy.sh
+./tests/test-baseos-ntp.sh
 ./tests/test-timedatectl.sh
 ./test-boot-qemu.sh rg40xxv
 ./validate-on-device.sh rg40xxv DEVICE_IP ROOT_PASSWORD

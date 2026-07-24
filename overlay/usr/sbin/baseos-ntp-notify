@@ -1,0 +1,14 @@
+#!/bin/sh
+# BusyBox ntpd callback: mark this boot synchronized and persist time to RTC.
+set -eu
+
+SYNC_FILE="${BASEOS_NTP_SYNC_FILE:-/run/baseos-ntp-synchronized}"
+tmp_sync="$SYNC_FILE.$$"
+trap 'rm -f "$tmp_sync"' EXIT HUP INT TERM
+
+date +%s > "$tmp_sync"
+chmod 644 "$tmp_sync"
+mv -f "$tmp_sync" "$SYNC_FILE"
+hwclock -u -w 2>/dev/null || true
+
+trap - EXIT HUP INT TERM

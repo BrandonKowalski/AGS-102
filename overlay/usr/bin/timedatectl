@@ -1,13 +1,17 @@
 #!/bin/sh
 # Minimal timedatectl compatibility for BaseOS's BusyBox init system.
-# NextUI uses only the Timezone property and set-timezone. The selected zone
-# lives on /data and /etc/localtime resolves through writable /run.
+# NextUI uses the Timezone/NTP properties plus set-timezone/set-ntp. Persistent
+# choices live on /data; writable runtime state lives under /run.
 set -eu
 
 ZONEINFO_DIR="${BASEOS_ZONEINFO_DIR:-/usr/share/zoneinfo}"
 DATA_DIR="${BASEOS_DATA_DIR:-/data}"
 LOCALTIME_LINK="${BASEOS_LOCALTIME_LINK:-/run/localtime}"
-STATE_FILE="$DATA_DIR/timezone"
+TIMEZONE_STATE_FILE="$DATA_DIR/timezone"
+NTP_STATE_FILE="${BASEOS_NTP_STATE_FILE:-$DATA_DIR/ntp-enabled}"
+NTP_SYNC_FILE="${BASEOS_NTP_SYNC_FILE:-/run/baseos-ntp-synchronized}"
+NTP_HELPER="${BASEOS_NTP_HELPER:-/usr/sbin/baseos-ntp}"
+NTP_LOG="${BASEOS_NTP_LOG:-/var/log/baseos-ntp.log}"
 DEFAULT_TIMEZONE="Etc/UTC"
 
 valid_timezone() {
@@ -19,8 +23,8 @@ valid_timezone() {
 
 current_timezone() {
 	zone=""
-	if [ -s "$STATE_FILE" ]; then
-		IFS= read -r zone < "$STATE_FILE" || true
+	if [ -s "$TIMEZONE_STATE_FILE" ]; then
+		IFS= read -r zone < "$TIMEZONE_STATE_FILE" || true
 		if valid_timezone "$zone"; then
 			printf '%s\n' "$zone"
 			return 0
@@ -57,13 +61,68 @@ set_timezone() {
 	fi
 
 	mkdir -p "$DATA_DIR"
-	tmp_state="$STATE_FILE.$$"
+	tmp_state="$TIMEZONE_STATE_FILE.$$"
 	trap 'rm -f "$tmp_state" "$LOCALTIME_LINK.$$"' EXIT HUP INT TERM
 	printf '%s\n' "$zone" > "$tmp_state"
 	chmod 644 "$tmp_state"
-	mv -f "$tmp_state" "$STATE_FILE"
+	mv -f "$tmp_state" "$TIMEZONE_STATE_FILE"
 	link_timezone "$zone"
 	trap - EXIT HUP INT TERM
+}
+
+current_ntp() {
+	value=""
+	if [ -s "$NTP_STATE_FILE" ]; then
+		IFS= read -r value < "$NTP_STATE_FILE" || true
+	fi
+	case "$value" in
+		yes) printf 'yes\n' ;;
+		*) printf 'no\n' ;;
+	esac
+}
+
+current_ntp_synchronized() {
+	if [ "$(current_ntp)" = "yes" ] && [ -s "$NTP_SYNC_FILE" ]; then
+		printf 'yes\n'
+	else
+		printf 'no\n'
+	fi
+}
+
+start_ntp() {
+	[ "$(current_ntp)" = "yes" ] || return 0
+	if [ ! -x "$NTP_HELPER" ]; then
+		printf 'timedatectl: NTP helper is unavailable: %s\n' "$NTP_HELPER" >&2
+		return 1
+	fi
+	mkdir -p "$(dirname "$NTP_LOG")"
+	"$NTP_HELPER" run </dev/null >> "$NTP_LOG" 2>&1 &
+}
+
+set_ntp() {
+	case "$1" in
+		true|yes|1) enabled="yes" ;;
+		false|no|0) enabled="no" ;;
+		*)
+			printf 'timedatectl: expected true or false, got: %s\n' "$1" >&2
+			return 1
+			;;
+	esac
+
+	mkdir -p "$DATA_DIR"
+	tmp_state="$NTP_STATE_FILE.$$"
+	trap 'rm -f "$tmp_state"' EXIT HUP INT TERM
+	printf '%s\n' "$enabled" > "$tmp_state"
+	chmod 644 "$tmp_state"
+	mv -f "$tmp_state" "$NTP_STATE_FILE"
+	trap - EXIT HUP INT TERM
+
+	rm -f "$NTP_SYNC_FILE"
+	if [ "$enabled" = "yes" ]; then
+		start_ntp
+	elif [ -x "$NTP_HELPER" ]; then
+		"$NTP_HELPER" stop
+	fi
 }
 
 show_property() {
@@ -83,8 +142,8 @@ show_property() {
 
 	case "$property" in
 		Timezone) current_timezone ;;
-		# BaseOS does not currently run an NTP daemon. Report that honestly.
-		NTP) printf 'no\n' ;;
+		NTP) current_ntp ;;
+		NTPSynchronized) current_ntp_synchronized ;;
 		*) printf 'timedatectl: unsupported property: %s\n' "$property" >&2; return 1 ;;
 	esac
 }
@@ -98,13 +157,14 @@ case "${1:-}" in
 		set_timezone "$2"
 		;;
 	set-ntp)
-		printf 'timedatectl: network time synchronization is unavailable\n' >&2
-		exit 1
+		[ "$#" -eq 2 ] || { printf 'usage: timedatectl set-ntp BOOL\n' >&2; exit 2; }
+		set_ntp "$2"
 		;;
 	apply)
-		# BaseOS-private boot hook: restore the persisted link without
-		# rewriting the state file.
+		# BaseOS-private boot hook: restore persistent settings. NTP startup
+		# only forks a detached worker; network waits remain off the boot path.
 		link_timezone "$(current_timezone)"
+		start_ntp
 		;;
 	*)
 		printf 'timedatectl: unsupported command: %s\n' "${1:-}" >&2

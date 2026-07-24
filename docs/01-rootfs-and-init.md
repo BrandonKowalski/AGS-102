@@ -140,10 +140,18 @@ them. Three shims bridge the gap:
   → `pidof bluetoothd`; `start/restart bluetooth` → ensure a system `dbus-daemon` then
   launch `/usr/libexec/bluetooth/bluetoothd`; `stop bluetooth` → kill it. Everything
   else exits 0 quietly (callers guard with `|| true`).
-- **`/usr/bin/timedatectl`** — implements NextUI's timezone query/set calls without
-  systemd. The selected name is stored in `/data/timezone`; `/etc/localtime` points
-  through writable `/run/localtime`, which `rcS` restores on every boot. Invalid or
-  path-traversing zone names are rejected against the harvested zoneinfo database.
+- **`/usr/bin/timedatectl`** — implements NextUI's timezone and network-time calls
+  without systemd. The selected zone is stored in `/data/timezone`; `/etc/localtime`
+  points through writable `/run/localtime`, which `rcS` restores on every boot.
+  The NTP preference is stored in `/data/ntp-enabled` and controls a supervised
+  BusyBox `ntpd`. Enabling it returns immediately: `/usr/sbin/baseos-ntp` waits for
+  a default route and DNS entirely in the background, so neither an unavailable
+  network nor clock synchronization can delay frontend startup. Successful syncs
+  update the hardware clock and `/run/baseos-ntp-synchronized`. Invalid timezone
+  names and invalid NTP boolean values are rejected. This remains an OS service,
+  matching NextUI's other platform integrations: TG5040 controls the stock
+  `/etc/init.d/ntpd`, TG5050 controls the stock `/etc/init.d/S49ntp`, and H700
+  delegates through `timedatectl`; NextUI itself does not bundle an NTP daemon.
 - **`/mnt/vendor/ctrl/setBluetooth.sh`** — a POSIX rewrite of the vendor script at the
   same path (p6 is never mounted over `/mnt/vendor`), so `bt_init.sh` works unchanged:
   `init` → `insmod rtl_btlpm.ko` + `rtk_hciattach …`; `enable` → `hciconfig hci0 up`.
