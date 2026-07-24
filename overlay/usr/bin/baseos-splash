@@ -1,0 +1,15 @@
+#!/bin/sh
+# Draw a compact status pill for exceptional boot work.
+#
+# Ordinary boots never invoke fbsplash, leaving the bootloader logo untouched
+# until the frontend draws its first frame.
+
+SPLASH_BIN="${BASEOS_FBSPLASH:-/usr/bin/fbsplash}"
+
+[ "${1:-}" = "--important" ] || exit 2
+shift
+
+[ "$#" -ge 1 ] || exit 2
+[ -x "$SPLASH_BIN" ] || exit 0
+
+exec "$SPLASH_BIN" --pill "$@"

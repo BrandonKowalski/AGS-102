@@ -1,13 +1,12 @@
-// Minimal framebuffer boot splash for the H700 base OS.
+// Minimal framebuffer boot splash/status renderer for the H700 base OS.
 //
 //   fbsplash <progress 0-100> [message]
+//   fbsplash --pill <progress|-1> <message>
 //
-// Renders a monochrome "BASE OS" wordmark that starts with B illuminated, then
-// continues left-to-right in proportion to <progress>: the reveal reaching the
-// last letter is the moment the frontend takes over. Optional [message] is shown
-// dim below (error/status states). Text is crisp anti-aliased Lexend via
-// freetype; if the font is missing it falls back to a built-in bitmap so boot
-// never blocks.
+// The full-screen path generates the static bootloader logo. Runtime boot
+// scripts use only --pill, which overlays a compact status surface without
+// clearing the boot logo. Text is crisp anti-aliased Lexend via freetype; if
+// the font is missing it falls back to a built-in bitmap so boot never blocks.
 #include <ctype.h>
 #include <fcntl.h>
 #include <linux/fb.h>
@@ -40,10 +39,30 @@ static const GlyphMap glyphs[] = {
 	{'1', {{0x04, 0x0c, 0x04, 0x04, 0x04, 0x04, 0x0e}}},
 	{'A', {{0x0e, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11}}},
 	{'B', {{0x1e, 0x11, 0x11, 0x1e, 0x11, 0x11, 0x1e}}},
+	{'C', {{0x0e, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0e}}},
+	{'D', {{0x1e, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1e}}},
 	{'E', {{0x1f, 0x10, 0x10, 0x1e, 0x10, 0x10, 0x1f}}},
+	{'F', {{0x1f, 0x10, 0x10, 0x1e, 0x10, 0x10, 0x10}}},
+	{'G', {{0x0e, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0f}}},
+	{'H', {{0x11, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11}}},
+	{'I', {{0x0e, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0e}}},
+	{'J', {{0x07, 0x02, 0x02, 0x02, 0x12, 0x12, 0x0c}}},
+	{'K', {{0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11}}},
+	{'L', {{0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1f}}},
+	{'M', {{0x11, 0x1b, 0x15, 0x15, 0x11, 0x11, 0x11}}},
+	{'N', {{0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11}}},
 	{'O', {{0x0e, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0e}}},
+	{'P', {{0x1e, 0x11, 0x11, 0x1e, 0x10, 0x10, 0x10}}},
+	{'Q', {{0x0e, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0d}}},
+	{'R', {{0x1e, 0x11, 0x11, 0x1e, 0x14, 0x12, 0x11}}},
 	{'S', {{0x0f, 0x10, 0x10, 0x0e, 0x01, 0x01, 0x1e}}},
+	{'T', {{0x1f, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04}}},
+	{'U', {{0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0e}}},
 	{'V', {{0x11, 0x11, 0x11, 0x11, 0x11, 0x0a, 0x04}}},
+	{'W', {{0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0a}}},
+	{'X', {{0x11, 0x11, 0x0a, 0x04, 0x0a, 0x11, 0x11}}},
+	{'Y', {{0x11, 0x11, 0x0a, 0x04, 0x04, 0x04, 0x04}}},
+	{'Z', {{0x1f, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1f}}},
 };
 
 static const Glyph *glyph_for(char c) {
@@ -71,6 +90,68 @@ static void put_pixel(uint8_t *fb, struct fb_var_screeninfo *v, struct fb_fix_sc
 		case 16: *(uint16_t *)dst = (uint16_t)pixel; break;
 		case 24: dst[0] = pixel & 0xff; dst[1] = (pixel >> 8) & 0xff; dst[2] = (pixel >> 16) & 0xff; break;
 		case 32: *(uint32_t *)dst = pixel; break;
+	}
+}
+
+static uint32_t get_pixel(uint8_t *fb, struct fb_var_screeninfo *v,
+                          struct fb_fix_screeninfo *f, int x, int y) {
+	uint8_t *src = fb + y * f->line_length + x * (v->bits_per_pixel / 8);
+	switch (v->bits_per_pixel) {
+		case 16: return *(uint16_t *)src;
+		case 24: return (uint32_t)src[0] | ((uint32_t)src[1] << 8) | ((uint32_t)src[2] << 16);
+		case 32: return *(uint32_t *)src;
+		default: return 0;
+	}
+}
+
+static uint8_t pixel_channel(uint32_t pixel, struct fb_bitfield field) {
+	if (!field.length)
+		return 0;
+	uint32_t mask = (1u << field.length) - 1u;
+	uint32_t value = (pixel >> field.offset) & mask;
+	return (uint8_t)((value * 255u + mask / 2u) / mask);
+}
+
+static void blend_pixel(uint8_t *fb, struct fb_var_screeninfo *v,
+                        struct fb_fix_screeninfo *f, int x, int y,
+                        int r, int g, int b, int alpha) {
+	if (x < 0 || y < 0 || x >= (int)v->xres || y >= (int)v->yres || alpha <= 0)
+		return;
+	uint32_t under = get_pixel(fb, v, f, x, y);
+	int ur = pixel_channel(under, v->red);
+	int ug = pixel_channel(under, v->green);
+	int ub = pixel_channel(under, v->blue);
+	r = (r * alpha + ur * (255 - alpha)) / 255;
+	g = (g * alpha + ug * (255 - alpha)) / 255;
+	b = (b * alpha + ub * (255 - alpha)) / 255;
+	put_pixel(fb, v, f, x, y, make_pixel(v, r, g, b));
+}
+
+static int inside_round_rect(double px, double py, int x, int y, int w, int h, int radius) {
+	double cx = px < x + radius ? x + radius :
+	            px > x + w - radius ? x + w - radius : px;
+	double cy = py < y + radius ? y + radius :
+	            py > y + h - radius ? y + h - radius : py;
+	double dx = px - cx, dy = py - cy;
+	return dx * dx + dy * dy <= (double)radius * radius;
+}
+
+static void round_rect(uint8_t *fb, struct fb_var_screeninfo *v,
+                       struct fb_fix_screeninfo *f, int x, int y, int w, int h,
+                       int radius, const int colour[3], int opacity) {
+	for (int py = y; py < y + h; py++) {
+		for (int px = x; px < x + w; px++) {
+			int covered = 0;
+			for (int sy = 0; sy < 2; sy++)
+				for (int sx = 0; sx < 2; sx++)
+					covered += inside_round_rect(
+						px + (sx + 0.5) / 2.0,
+						py + (sy + 0.5) / 2.0,
+						x, y, w, h, radius);
+			if (covered)
+				blend_pixel(fb, v, f, px, py, colour[0], colour[1], colour[2],
+				            opacity * covered / 4);
+		}
 	}
 }
 
@@ -188,6 +269,31 @@ static void ft_draw(uint8_t *fb, struct fb_var_screeninfo *v, struct fb_fix_scre
 	}
 }
 
+static void ft_draw_overlay(uint8_t *fb, struct fb_var_screeninfo *v,
+                            struct fb_fix_screeninfo *f, FT_Face face,
+                            const char *s, int x, int baseline, int tracking,
+                            const int colour[3]) {
+	int pen = x;
+	for (; *s; s++) {
+		if (FT_Load_Char(face, (unsigned char)*s, FT_LOAD_RENDER))
+			continue;
+		FT_Bitmap *bm = &face->glyph->bitmap;
+		int gx = pen + face->glyph->bitmap_left;
+		int gy = baseline - face->glyph->bitmap_top;
+		for (unsigned row = 0; row < bm->rows; row++) {
+			for (unsigned col = 0; col < bm->width; col++) {
+				unsigned alpha = bm->buffer[row * bm->pitch + col];
+				if (alpha)
+					blend_pixel(fb, v, f, gx + (int)col, gy + (int)row,
+					            colour[0], colour[1], colour[2], alpha);
+			}
+		}
+		pen += face->glyph->advance.x >> 6;
+		if (s[1])
+			pen += tracking;
+	}
+}
+
 // --- bitmap fallback -------------------------------------------------------
 
 static void bmp_text(uint8_t *fb, struct fb_var_screeninfo *v, struct fb_fix_screeninfo *f,
@@ -200,6 +306,87 @@ static void bmp_text(uint8_t *fb, struct fb_var_screeninfo *v, struct fb_fix_scr
 					for (int sy = 0; sy < scale; sy++)
 						for (int sx = 0; sx < scale; sx++)
 							put_pixel(fb, v, f, x + col * scale + sx, y + row * scale + sy, pixel);
+	}
+}
+
+static void render_pill(uint8_t *fb, struct fb_var_screeninfo *vp,
+                        struct fb_fix_screeninfo *fp, int prog, const char *msg) {
+	struct fb_var_screeninfo v = *vp;
+	struct fb_fix_screeninfo f = *fp;
+	int W = (int)v.xres, H = (int)v.yres;
+	if (!msg || !msg[0])
+		msg = "WORKING";
+
+	const int border[3] = {0x5D, 0x68, 0x6D};
+	const int panel[3] = {0x13, 0x18, 0x1B};
+	const int track[3] = {0x32, 0x3B, 0x40};
+	const int text[3] = {0xEA, 0xF0, 0xF0};
+	const int accent[3] = {0xB9, 0xC8, 0xC8};
+	int show_progress = prog >= 0;
+
+	FT_Library lib;
+	FT_Face face;
+	int have_ft = 0;
+	int font_size = clampi((int)(H * 0.038), 15, 26);
+	int tracking = clampi(font_size / 14, 1, 2);
+	int text_width = 0;
+	if (!FT_Init_FreeType(&lib) && !FT_New_Face(lib, FONT_PATH, 0, &face)) {
+		have_ft = 1;
+		while (font_size > 12) {
+			FT_Set_Pixel_Sizes(face, 0, font_size);
+			text_width = ft_measure(face, msg, tracking);
+			if (text_width <= W - 72)
+				break;
+			font_size--;
+		}
+	} else {
+		font_size = W < 600 ? 2 : 3;
+		tracking = 0;
+		text_width = (int)strlen(msg) * 6 * font_size - font_size;
+	}
+
+	int pad_x = clampi((int)(font_size * 1.05), 18, 30);
+	int pill_width = clampi(text_width + pad_x * 2, W * 2 / 5, W - 32);
+	int pill_height = clampi(have_ft ? font_size * 3 : font_size * 18, 48, 74);
+	int pill_x = (W - pill_width) / 2;
+	int pill_y = H - pill_height - clampi(H / 12, 34, 64);
+	int radius = pill_height / 2;
+
+	// Opaque enough for legibility over arbitrary custom artwork, with a quiet
+	// one-pixel edge that keeps the pill distinct on dark boot logos.
+	round_rect(fb, &v, &f, pill_x, pill_y, pill_width, pill_height,
+	           radius, border, 245);
+	round_rect(fb, &v, &f, pill_x + 1, pill_y + 1,
+	           pill_width - 2, pill_height - 2, radius - 1, panel, 246);
+
+	int progress_height = clampi(pill_height / 18, 3, 4);
+	int progress_x = pill_x + pad_x;
+	int progress_width = pill_width - pad_x * 2;
+	int progress_y = pill_y + pill_height - clampi(pill_height / 5, 9, 13);
+	if (show_progress) {
+		int progress_radius = progress_height / 2;
+		round_rect(fb, &v, &f, progress_x, progress_y,
+		           progress_width, progress_height, progress_radius, track, 255);
+		int fill_width = progress_width * clampi(prog, 0, 100) / 100;
+		if (fill_width > 0)
+			round_rect(fb, &v, &f, progress_x, progress_y,
+			           fill_width, progress_height, progress_radius, accent, 255);
+	}
+
+	if (have_ft) {
+		FT_Set_Pixel_Sizes(face, 0, font_size);
+		int tx = pill_x + (pill_width - text_width) / 2;
+		int content_bottom = show_progress ? progress_y - 2 : pill_y + pill_height;
+		int baseline = pill_y + (content_bottom - pill_y) / 2 + font_size * 3 / 8;
+		ft_draw_overlay(fb, &v, &f, face, msg, tx, baseline, tracking, text);
+		FT_Done_Face(face);
+		FT_Done_FreeType(lib);
+	} else {
+		int tx = pill_x + (pill_width - text_width) / 2;
+		int content_bottom = show_progress ? progress_y - 2 : pill_y + pill_height;
+		int ty = pill_y + (content_bottom - pill_y - 7 * font_size) / 2;
+		bmp_text(fb, &v, &f, tx, ty, msg, font_size,
+		         make_pixel(&v, text[0], text[1], text[2]));
 	}
 }
 
@@ -283,12 +470,14 @@ static void render(uint8_t *fb, struct fb_var_screeninfo *vp, struct fb_fix_scre
 // PPM so the splash can be eyeballed without a real framebuffer or device.
 #include <arpa/inet.h>
 int main(int argc, char **argv) {
-	int prog = argc > 1 ? atoi(argv[1]) : 0;
-	prog = clampi(prog, 0, 100);
-	const char *msg = (argc > 2 && argv[2][0]) ? argv[2] : NULL;
-	const char *out = argc > 3 ? argv[3] : "/out/render.ppm";
-	int W = argc > 4 ? atoi(argv[4]) : 640;
-	int H = argc > 5 ? atoi(argv[5]) : 480;
+	int pill = argc > 1 && strcmp(argv[1], "--pill") == 0;
+	int arg = pill ? 2 : 1;
+	int prog = argc > arg ? atoi(argv[arg]) : 0;
+	prog = pill && prog < 0 ? -1 : clampi(prog, 0, 100);
+	const char *msg = (argc > arg + 1 && argv[arg + 1][0]) ? argv[arg + 1] : NULL;
+	const char *out = argc > arg + 2 ? argv[arg + 2] : "/out/render.ppm";
+	int W = argc > arg + 3 ? atoi(argv[arg + 3]) : 640;
+	int H = argc > arg + 4 ? atoi(argv[arg + 4]) : 480;
 	W = clampi(W, 64, 4096);
 	H = clampi(H, 64, 4096);
 
@@ -304,7 +493,13 @@ int main(int argc, char **argv) {
 	f.smem_len = f.line_length * H;
 
 	uint8_t *fb = calloc(1, f.smem_len);
-	render(fb, &v, &f, prog, msg);
+	if (pill) {
+		// Give offline previews the default static logo beneath the overlay.
+		render(fb, &v, &f, 100, NULL);
+		render_pill(fb, &v, &f, prog, msg);
+	} else {
+		render(fb, &v, &f, prog, msg);
+	}
 
 	FILE *fp = fopen(out, "wb");
 	fprintf(fp, "P6\n%d %d\n255\n", W, H);
@@ -321,9 +516,11 @@ int main(int argc, char **argv) {
 }
 #else
 int main(int argc, char **argv) {
-	int prog = argc > 1 ? atoi(argv[1]) : 0;
-	prog = clampi(prog, 0, 100);
-	const char *msg = (argc > 2 && argv[2][0]) ? argv[2] : NULL;
+	int pill = argc > 1 && strcmp(argv[1], "--pill") == 0;
+	int arg = pill ? 2 : 1;
+	int prog = argc > arg ? atoi(argv[arg]) : 0;
+	prog = pill && prog < 0 ? -1 : clampi(prog, 0, 100);
+	const char *msg = (argc > arg + 1 && argv[arg + 1][0]) ? argv[arg + 1] : NULL;
 
 	int fd = open("/dev/fb0", O_RDWR);
 	if (fd < 0)
@@ -345,7 +542,10 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-	render(fb, &v, &f, prog, msg);
+	if (pill)
+		render_pill(fb, &v, &f, prog, msg);
+	else
+		render(fb, &v, &f, prog, msg);
 	msync(fb, map_len, MS_SYNC);
 
 	// Force the panel to scan out this buffer: on Allwinner disp2 "smooth boot"

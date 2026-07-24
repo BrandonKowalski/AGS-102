@@ -88,7 +88,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   printf "%s\n" "$BASEOS_MODEL_STRING" > "$R/mnt/vendor/bin/dmenu.bin"
   chmod 755 "$R/init" \
             "$R/etc/init.d/rcS" "$R/etc/init.d/rcK" "$R/etc/init.d/dev" \
-            "$R/usr/bin/timedatectl" \
+            "$R/usr/bin/baseos-splash" "$R/usr/bin/timedatectl" \
             "$R/usr/sbin/nextui-session" "$R/usr/sbin/systemctl" \
             "$R/usr/sbin/expand-storage" \
             "$R/mnt/vendor/ctrl/setBluetooth.sh" \
@@ -97,7 +97,8 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   # Guard: every boot-critical script must be executable (a non-exec script is
   # skipped by its `[ -x ]` guard and fails silently — cost us one flash).
   for s in /init /etc/init.d/rcS /etc/init.d/rcK /usr/sbin/nextui-session \
-           /usr/bin/timedatectl /usr/sbin/expand-storage /usr/sbin/systemctl \
+           /usr/bin/baseos-splash /usr/bin/timedatectl \
+           /usr/sbin/expand-storage /usr/sbin/systemctl \
            /mnt/vendor/ctrl/setBluetooth.sh; do
     [ -x "$R$s" ] || { echo "FATAL: $s is not executable in rootfs"; exit 1; }
   done

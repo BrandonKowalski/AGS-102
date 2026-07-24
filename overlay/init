@@ -10,8 +10,6 @@
 
 echo "BASEOS STAGE-A shell-alive" | /usr/bin/busybox dd of=/dev/mmcblk0p6 bs=512 seek=8192 conv=notrunc 2>/dev/null
 /usr/bin/busybox sync
-/usr/bin/fbsplash 10 2>/dev/null
-
 echo "BASEOS STAGE-B exec-init" | /usr/bin/busybox dd of=/dev/mmcblk0p6 bs=512 seek=8194 conv=notrunc 2>/dev/null
 /usr/bin/busybox sync
 exec /usr/bin/busybox init

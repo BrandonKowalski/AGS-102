@@ -64,7 +64,7 @@ touched again.
 ## 4. Adding a frontend (the hand-off)
 
 Base OS ships no frontend, so after the first-boot expansion the card is empty and
-`nextui-session` shows **`✓`** and waits (init respawns it). The
+`nextui-session` shows **`ADD FRONTEND TO SD CARD`** and waits (init respawns it). The
 user then:
 
 1. mounts the card on a computer — it now presents the full-capacity `BASEOS` volume
@@ -75,7 +75,7 @@ user then:
 On that boot `nextui-session` sees `MinUI.zip` and runs the frontend's **own**
 installer (which extracts `.system/…`, processes the `*.pakz`, and creates
 Bios/Roms/Saves), then launches it. The install takes ~1 min (SD-speed dependent) and
-shows a static `INSTALLING` frame — see [04](04-boot-splash.md) for why it's static and
+shows a static `INSTALLING FRONTEND` pill — see [04](04-boot-splash.md) for why it's static and
 why the frontend's own installer UI can't render on Base OS. Every boot after that goes
 straight to the frontend.
 
@@ -87,7 +87,7 @@ sentinels, a ready `wlan0`).
 
 | boot | expand-storage | frontend | net |
 |---|---|---|---|
-| 1st (fresh flash) | grows + reformats p8 empty (~seconds) | none yet → `✓` prompt | expand, then wait |
+| 1st (fresh flash) | grows + reformats p8 empty (~seconds) | none yet → add-frontend prompt | expand, then wait |
 | after user copies a frontend | p8 already fills disk → no-op | frontend installer runs (~1 min), then launches | slow, one-time |
 | every later boot | no-op | `MinUI.zip`/pakz consumed → launch only | a few seconds to the frontend |
 

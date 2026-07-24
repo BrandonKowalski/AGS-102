@@ -14,7 +14,7 @@
 
 BaseOS will boot up and expand to fill your SD card.
 
-Once it shows "BASE OS" with a check mark, you know it worked.
+Once it shows **ADD FRONTEND TO SD CARD**, the expansion is complete.
 
 ## How to run NextUI?
 
@@ -26,7 +26,7 @@ B) Install NextUI on a separate card (recommended).
 
 ### Installing NextUI on the same card as BaseOS
 
-1. After the first boot up of BaseOS and you see the check mark, hold the POWER button of your handheld for several seconds to power it off.
+1. After the first boot reaches **ADD FRONTEND TO SD CARD**, hold the POWER button of your handheld for several seconds to power it off.
 2. Take out the SD card and plug it into your computer. You will see a BASEOS volume appear on your computer. This will be your NextUI partition.
 3. Install NextUI as usual on this volume (i.e. unzip the contents of the NextUI relase zip file you downloaded). If you want, you can also copy your Roms and Bios now.
 4. Eject the SD card and plug it back into your handheld and power it on.

@@ -14,6 +14,32 @@ Kernel-relative markers are written to `/run/boot-*` by `rcS` / `nextui-session`
 | `boot-rcS-done` | 2.59 s | modules requested, `/data` + card mounted (~0.55 s of rcS) |
 | `boot-frontend-exec` | 2.80 s | `launch.sh` handed control to NextUI |
 
+The normal splash policy has no runtime detection, hashing, renderer process or
+framebuffer write. It removes the former synchronous `/init` draw plus the routine
+`rcS`/hand-off draws, so the expected regular-boot impact is non-positive by
+construction—not merely assumed from a desktop benchmark. `boot-frontend-exec`
+remains the on-device acceptance marker. The 2.80 s result above is the historical
+reference; when the surrounding image state changes, use a controlled old/new A/B
+before attributing movement to splash policy. On RG40XXV, `validate-on-device.sh`
+fails above the current measured 3.00 s ceiling.
+
+### Static-logo A/B (2026-07-24)
+
+The first post-change boot measured 2.95 s and appeared to regress against the
+historical 2.80 s result above. A controlled on-device A/B restored the exact
+pre-change files from backup between reboots:
+
+| build | `rcS-start` samples | `rcS-done` samples | `frontend-exec` samples | mean hand-off |
+|---|---|---|---|---|
+| pre-change animated splash | 2.08, 2.10 s | 3.00, 2.98 s | 3.01, 3.01 s | 3.01 s |
+| static logo + exceptional pills | 1.99, 2.04, 2.05 s | 2.94, 2.95, 2.96 s | 2.95, 2.96, 2.97 s | 2.96 s |
+
+The new policy is about **50 ms faster** at frontend hand-off and reaches `rcS`
+roughly 60 ms earlier by removing the synchronous `/init` draw. The current device
+state is slower than the older 2.80 s measurement for reasons that predate this
+change—the old files reproduce the slowdown—so 3.00 s is the evidence-based
+regression ceiling for this image state.
+
 Then `launch.sh` + `nextui.elf` init add ~1–2 s to the first frame. Before the kernel,
 boot0 + U-Boot add ~1.5–2.5 s (not software-visible; `bootdelay=0`).
 

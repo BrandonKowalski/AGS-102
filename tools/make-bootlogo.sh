@@ -1,9 +1,7 @@
 #!/bin/sh
-# Generate one target's bootlogo from the fbsplash renderer so the hardware
-# bootlogo (shown by boot0/U-Boot on the boot-resource partition) is pixel-
-# identical to fbsplash at its initial 0% state (the complete B illuminated).
-# build-image.sh writes the
-# result onto p2.
+# Generate one target's static bootlogo from the fbsplash renderer.
+# Boot0/U-Boot shows it from the boot-resource partition; build-image.sh writes
+# the result onto p2.
 # Output format matches the selected device: native dimensions, 24bpp,
 # uncompressed BMP. The artifact is written beneath work/<target>/.
 set -eu
@@ -29,7 +27,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
   mkdir -p /usr/share/baseos && cp /assets/boot.ttf /usr/share/baseos/boot.ttf
   gcc -DFBSPLASH_TEST -O2 $(pkg-config --cflags freetype2) -o /tmp/fbtest \
     /src/fbsplash.c $(pkg-config --static --libs freetype2)
-  /tmp/fbtest 0 "" /tmp/logo.ppm "$WIDTH" "$HEIGHT"
+  /tmp/fbtest 100 "" /tmp/logo.ppm "$WIDTH" "$HEIGHT"
   convert /tmp/logo.ppm -type TrueColor -define bmp:format=bmp3 BMP3:/out/bootlogo.bmp
 '
 echo "wrote $OUT ($PROFILE_BOOTLOGO_WIDTH x $PROFILE_BOOTLOGO_HEIGHT)"

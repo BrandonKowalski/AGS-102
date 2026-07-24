@@ -62,7 +62,7 @@ rootfs and execs `/init`. Our `/init` is a **regular script** (not a symlink —
 
 1. writes a raw liveness marker into the sacrificial p6 stub sector (proves BusyBox
    `sh` ran even if every later mount fails — pure forensics, see [06](06-status-and-lessons.md));
-2. paints the first `fbsplash` frame;
+2. leaves the bootloader's static logo untouched;
 3. `exec /usr/bin/busybox init`.
 
 BusyBox init then reads `/etc/inittab`.
@@ -86,7 +86,7 @@ ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100   # serial console (harmless wi
 
 1. mount `proc`, `sysfs`, `devtmpfs`, `devpts`, tmpfs on `/dev/shm` `/tmp` `/run`
    `/var`; hostname
-2. paint `fbsplash 30`
+2. leave the framebuffer untouched
 3. **`insmod mali_kbase.ko` in the background** — nothing needs the GPU until
    NextUI's `GFX_init` ~2 s later, and the insmod costs ~0.7 s; backgrounding it
    overlaps the card mount (see the timing win in [05](05-runtime-power-network.md))
@@ -101,8 +101,7 @@ ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100   # serial console (harmless wi
 8. mount the NextUI card: TF2 (`/dev/mmcblk1p1`) if present, else this card's own
    `/dev/mmcblk0p8` → `/mnt/sdcard`, plus the `/mnt/SDCARD` compat symlink; write a
    boot breadcrumb to the card
-9. paint `fbsplash 55`; start dev extras (`/etc/init.d/dev` → dropbear SSH/sftp-server)
-   in the background
+9. start dev extras (`/etc/init.d/dev` → dropbear SSH/sftp-server) in the background
 
 No udev, no mdev: devtmpfs auto-creates nodes, SDL runs with
 `SDL_JOYSTICK_DISABLE_UDEV=1`, BlueZ makes its own uinput nodes, and `dbus-daemon`
@@ -114,11 +113,11 @@ Runs from `respawn`. It:
 
 1. ensures the card is mounted (retry loop; `INSERT SD CARD` splash if none);
 2. runs the first-boot **install** if `MinUI.zip`/`*.pakz` are present — same triggers
-   as the old boot shim — painting a static `INSTALLING` frame
+   as the old boot shim — painting a static install/update status pill
    (see [04](04-boot-splash.md) for why it is static, not animated, and why NextUI's
    own installer UI can't render here);
 3. waits (bounded) for `/dev/mali0` (the backgrounded module load), records the
-   `frontend-exec` boot marker, paints `fbsplash 100`, and
+   `frontend-exec` boot marker and
    `exec /bin/sh .system/h700/paks/MinUI.pak/launch.sh`.
 
 The existing `MinUI.pak/launch.sh` runs **unchanged** on base OS: its stock-OS calls

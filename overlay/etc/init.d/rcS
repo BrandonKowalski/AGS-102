@@ -14,9 +14,6 @@ grep -q ' /dev devtmpfs ' /proc/mounts || /bin/mount -t devtmpfs dev /dev
 /bin/cut -d" " -f1 /proc/uptime > /run/boot-rcS-start
 /bin/mount -t tmpfs -o mode=755,size=64m tmpfs /var
 
-# First visible sign of life: proves the kernel mounted p5 and init is running.
-[ -x /usr/bin/fbsplash ] && /usr/bin/fbsplash 30 2>/dev/null &
-
 # /var skeleton (tmpfs). Persistent pieces live on /data and are linked below.
 /bin/mkdir -p /var/lib /var/log /var/tmp /var/lib/alsa /var/lib/bluealsa /var/empty
 /bin/ln -s /run /var/run
@@ -104,9 +101,6 @@ done
 if /bin/mountpoint -q /mnt/sdcard 2>/dev/null; then
 	echo "$(/bin/cut -d' ' -f1 /proc/uptime) rcS reached card mount" >> /mnt/sdcard/baseos-boot.log
 fi
-
-# Storage is up — advance the boot illumination.
-[ -x /usr/bin/fbsplash ] && /usr/bin/fbsplash 55 2>/dev/null &
 
 # Dev image extras (serial getty is in inittab; this starts SSH).
 [ -x /etc/init.d/dev ] && /etc/init.d/dev &

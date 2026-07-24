@@ -23,7 +23,7 @@ log() {
 	echo "$line" >> "$LOG"
 	[ -d /data ] && echo "$line" >> /data/expand.log 2>/dev/null || true
 }
-splash() { [ -x /usr/bin/fbsplash ] && /usr/bin/fbsplash "$@" 2>/dev/null; }
+splash() { [ -x /usr/bin/baseos-splash ] && /usr/bin/baseos-splash --important "$@" 2>/dev/null; }
 
 [ -b "$P8" ] || { log "no $P8"; exit 0; }
 [ -x /usr/sbin/gptgrow ] || { log "no gptgrow"; exit 0; }

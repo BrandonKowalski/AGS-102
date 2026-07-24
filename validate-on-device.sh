@@ -29,6 +29,10 @@ for m in rcS-start rcS-done frontend-exec; do
 	[ -f /run/boot-$m ] && echo "  boot-$m: $(cat /run/boot-$m)s"
 done
 chk "frontend exec marker exists" "test -f /run/boot-frontend-exec"
+if [ "$BASEOS_EXPECTED_TARGET" = rg40xxv ]; then
+	chk "regular boot stays within the measured 3.00s frontend-exec budget" \
+		"awk 'NR == 1 { exit !(\$1 <= 3.00) }' /run/boot-frontend-exec"
+fi
 
 echo "=== hardware ==="
 chk "GPU module loaded (mali_kbase)"   "grep -q mali_kbase /proc/modules"

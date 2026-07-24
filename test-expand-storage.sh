@@ -18,7 +18,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
     printf "%s\n" "#!/bin/sh" "$*" > "$path"
     chmod 755 "$path"
   }
-  make_stub /usr/bin/fbsplash "printf \"%s\\n\" \"\$*\" >> /tmp/splash.log"
+  make_stub /usr/bin/baseos-splash "printf \"%s\\n\" \"\$*\" >> /tmp/splash.log"
   make_stub /usr/local/bin/mkfs.vfat "printf \"%s\\n\" \"\$*\" >> /tmp/mkfs.log"
   make_stub /usr/local/bin/partprobe "exit 0"
 
@@ -34,7 +34,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
   make_stub /usr/sbin/gptgrow "exit 0"
   rm -f /tmp/splash.log /tmp/mkfs.log
   /bin/sh /test/expand-storage
-  grep -qx "45 EXPANDING STORAGE" /tmp/splash.log
+  grep -qx -- "--important 45 EXPANDING STORAGE" /tmp/splash.log
   grep -qx -- "-F 32 -n BASEOS /dev/mmcblk0p8" /tmp/mkfs.log
 
   # A real gptgrow error is neither an already-expanded card nor a reason to

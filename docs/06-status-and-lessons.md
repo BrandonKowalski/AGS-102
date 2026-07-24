@@ -8,7 +8,7 @@
 | Minimal rootfs mounts + BusyBox init → NextUI | ✅ cold boot 7.18 s |
 | First-boot expand-to-fill (p8 68 MB → 62.8 GB) | ✅ |
 | NextUI install + launch on Base OS | ✅ (`installer exited 0`, ~48 s) — validated with the earlier staged-payload flow; the current user-copies-frontend flow reuses the same install path but is not yet re-validated on hardware |
-| Seamless bootlogo → fbsplash illumination | ✅ |
+| Seamless static bootlogo → frontend hand-off | ✅ |
 | Deep sleep (real suspend-to-RAM, ~0 drain / 35 min) | ✅ |
 | WiFi unaided bring-up + stable association | ✅ (validated when the frontend's `wifi_init.sh` did the wait; the Base-OS-owned `wlan0` bring-up is not yet hardware-validated) |
 | Dropbear SSH + sftp over WiFi | ✅ (SSH + sftp-server validated on hardware via Forklift and scp) |
