@@ -39,7 +39,6 @@ if [ ! -x "$HERE/work/tools/busybox" ] \
   || [ ! -x "$HERE/work/tools/fbsplash" ] \
   || [ ! -x "$HERE/work/tools/gptgrow" ] \
   || [ ! -x "$HERE/work/tools/adbd" ] \
-  || [ ! -x "$HERE/work/tools/usb-gadget-watch" ] \
   || ! "$HERE/tools/tools-stamp.sh" | cmp -s - "$HERE/work/tools/.stamp"; then
 	"$HERE/build-tools.sh"
 else

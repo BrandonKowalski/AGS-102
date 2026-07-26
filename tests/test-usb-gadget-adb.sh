@@ -69,30 +69,6 @@ run_gadget "$TMP/sys"
 after="$(find "$G" | sort; cat "$G/strings/0x409/product")"
 [ "$before" = "$after" ] || { echo "second run mutated the gadget" >&2; exit 1; }
 
-# --- Rebind repopulates an unbound gadget ---------------------------------
-# The sunxi manager clears g1/UDC on every disconnect. Simulate that (empty the
-# UDC file on the composed gadget) then run the rebind action and confirm the
-# UDC name is written back — this is what makes a replug re-enumerate.
-: > "$G/UDC"
-[ ! -s "$G/UDC" ] || { echo "failed to simulate unbind" >&2; exit 1; }
-run_gadget "$TMP/sys" rebind
-[ "$(cat "$G/UDC")" = "5100000.udc-controller" ] \
-	|| { echo "rebind did not re-bind the unbound gadget" >&2; exit 1; }
-
-# A gadget that is still bound must be left untouched by rebind (it must never
-# write UDC while already bound — the kernel returns -EBUSY).
-before="$(find "$G" | sort; cat "$G/UDC")"
-run_gadget "$TMP/sys" rebind
-after="$(find "$G" | sort; cat "$G/UDC")"
-[ "$before" = "$after" ] || { echo "rebind mutated an already-bound gadget" >&2; exit 1; }
-
-# --- Rebind with no gadget composed is a silent no-op ---------------------
-# Before setup has ever run there is no g1; rebind must not compose anything.
-build_tree "$TMP/sys3"
-run_gadget "$TMP/sys3" rebind
-[ ! -d "$TMP/sys3/kernel/config/usb_gadget/g1" ] \
-	|| { echo "rebind composed a gadget from scratch" >&2; exit 1; }
-
 # --- No UDC present exits 0 quickly ---------------------------------------
 # An empty /sys (no udc, no configfs) must be a silent no-op.
 mkdir -p "$TMP/sys2/class/udc"

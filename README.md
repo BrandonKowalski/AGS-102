@@ -55,12 +55,13 @@ Development setup, build instructions, testing, and technical documentation are 
 
 ## USB access
 
-Connect a data-capable USB-C cable for adb.
+For reliable adb, connect a data-capable USB-C cable before powering on. If it
+is disconnected, restart with the cable connected.
 
-To access the SD card as a USB drive, hold **MENU** while powering on and keep
-holding it until the USB-storage message appears. BaseOS shares the complete
-TF2 card when one is inserted; otherwise it shares TF1's data partition. adb
-remains available.
+To access the SD card as a USB drive, connect the USB cable first, then hold
+**MENU** while powering on. Keep holding it until the USB-storage message
+appears. BaseOS shares the complete TF2 card when one is inserted; otherwise it
+shares TF1's data partition. adb remains available.
 
 Eject the drive on the computer before restarting the handheld. Restart without
 holding MENU to return to normal.

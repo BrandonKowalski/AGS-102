@@ -152,12 +152,12 @@ root/root dropbear; keeping it off the network avoids exposing an unauthenticate
 over WiFi). `/usr/sbin/usb-gadget-adb` composes the gadget; it is launched **backgrounded
 from `/etc/init.d/dev`** (itself already backgrounded off `rcS`, [01](01-rootfs-and-init.md) §5).
 
-**Role: leave the sunxi manager alone.** The port defaults to the sunxi manager's auto
-(ID-pin/VBUS) detection, and that is exactly what we rely on: the built-in UDC
-(`5100000.udc-controller`) is always present, we bind our gadget to it, and the manager
-selects peripheral mode on its own when a host cable is attached. The script does **not**
-force the role, because every way of doing so is a trap on this vendor kernel
-(measured on rg40xxv, [06](06-status-and-lessons.md) §3):
+**Role: preserve stock dual-role OTG.** The USB-C port is shared between peripheral
+access and intentional USB-host devices. BaseOS leaves the vendor DTB and sunxi
+manager in their stock auto mode, binds its gadget to the always-present UDC
+(`5100000.udc-controller`), and does **not** force the role at runtime. Every runtime
+role interface is a trap on this vendor kernel (measured on rg40xxv,
+[06](06-status-and-lessons.md) §3):
 
 - Writing `/sys/.../usbc0/otg_role` (e.g. `echo usb_device > otg_role`) **wedges the
   writer in an uninterruptible D-state** — reproduced both with and without a gadget
@@ -166,8 +166,11 @@ force the role, because every way of doing so is a trap on this vendor kernel
 - The sibling files `usb_device`/`usb_host`/`usb_null` are 0400 **read-triggers** — a
   bare `cat` of one switches the role and can wedge the port.
 
-Leaving the role in auto mode also keeps charging on the shared USB-C port undisturbed.
-(Note the real device path is `/sys/devices/platform/soc/usbc0`, reached via the stable
+The reliable peripheral-mode contract is therefore simple: connect the host cable
+before powering on. The manager selects the role during boot, while leaving the port
+available for USB-host peripherals on boots where no host cable is connected.
+Charging remains PMIC-controlled. (The manager's real device path is
+`/sys/devices/platform/soc/usbc0`, reached through the stable
 `/sys/bus/platform/devices/usbc0` symlink — but the script needs neither.)
 
 **configfs gadget layout.** The stock 4.9.170 kernel has `CONFIG_USB_CONFIGFS_F_FS=y`
@@ -189,25 +192,17 @@ first, then **retries** writing the controller name into `g1/UDC`
 has populated ep0 fails with `EINVAL`; the retry loop closes that race without a fixed
 sleep.
 
-**Disconnect / reconnect.** The sunxi OTG manager clears `g1/UDC` whenever VBUS
-drops, although the composed gadget, FunctionFS mount, and `adbd` survive. A boot-only
-bind therefore fails after the first unplug. `usb-gadget-watch` is a 65 KiB static
-process that blocks on the kernel uevent netlink socket and reads `g1/UDC` only after
-USB/power events. If the attribute is empty it invokes the script's bounded `rebind`
-action; an already-bound gadget is a no-op.
-
-This deliberately does not use the kernel `/sbin/hotplug` helper. An idle RG40XXV
-emits a battery `power_supply/change` uevent about every 10.24 seconds, so that
-mechanism would fork a helper process continuously. The resident listener receives
-the same events without polling or fork-per-event, and freezes naturally with the
-rest of userspace during suspend. Reading `g1/UDC` is essential: configfs attributes
-report a synthetic nonzero stat size even when empty, so `test -s` gives the wrong
-answer on-device.
+**Disconnect / reconnect.** The sunxi manager clears `g1/UDC` whenever VBUS drops.
+BaseOS intentionally does not keep a watcher, poller, hotplug helper, or manual
+rebinder for this partial recovery case: none can repair a later attach where the
+manager selects host role, and forcing the role would compromise OTG support. If adb
+is disconnected, power off and start again with the cable connected.
 
 **User stance.** adb is on by default, matching SSH/SFTP, but is reachable only by a
-physically connected USB data cable; the daemon has no TCP 5555 fallback. Create
-`/data/no-adb` and reboot to disable it. No frontend setting is required, keeping this
-OS-owned developer access independent of the installed frontend.
+physically connected USB data cable present during power-on; the daemon has no TCP
+5555 fallback. Create `/data/no-adb` and reboot to disable it. No frontend setting is
+required, keeping this OS-owned developer access independent of the installed
+frontend.
 
 **USB-storage maintenance mode.** The same kernel also has
 `CONFIG_USB_CONFIGFS_MASS_STORAGE=y`, and adb and mass storage work together as
@@ -215,8 +210,9 @@ one composite gadget. They cannot safely share the frontend *filesystem* with a
 running frontend, however: a writable FAT/exFAT volume must never be mounted by
 BaseOS and a USB host at the same time.
 
-Hold MENU from power-on to select an exclusive, one-boot maintenance mode. H700
-DTBs label that built-in button's active-low line `GPIO Key Menu`. The vendor
+Connect the host cable first, then hold MENU from power-on to select an exclusive,
+one-boot maintenance mode. H700 DTBs label that built-in button's active-low line
+`GPIO Key Menu`. The vendor
 input driver advertises standard `BTN_MODE` but does not maintain the
 `EVIOCGKEY` current-state bitmap, so the small `boot-menu-held` script queries
 the physical level from the already-mounted GPIO debug view. It has no wait

@@ -1,25 +1,21 @@
 #!/bin/sh
-# Bring up (and keep up) the BaseOS USB gadget.
+# Bring up the BaseOS USB gadget once during boot.
 #
-# Two actions, dispatched on $1 (default: setup):
-#   setup   compose the configfs gadget, start adbd, do the initial bind, and
-#           start the event-driven rebind watcher. Run once by init.d/dev.
-#   rebind  fast path: if the gadget exists but has become unbound, re-bind it
-#           to the UDC. This is what makes a replug re-enumerate — see below.
+# The optional argument is `setup`; omitting it has the same effect. The script
+# composes the configfs gadget, starts adbd, and performs one bounded initial
+# bind. Run once by init.d/dev.
 #
 # This is an optional convenience and NEVER a boot dependency: there is no
 # `set -e`, every failure path exits 0 silently, and every wait is a bounded
 # loop. If the kernel USB bits or the hardware are absent the whole thing is a
 # no-op. init.d/dev launches setup backgrounded so it never serialises boot.
 #
-# Why the rebind action exists: the sunxi OTG role manager CLEARS the gadget's
-# UDC binding on every USB disconnect / VBUS drop (dmesg: USB_STATE=DISCONNECTED
-# then g1/UDC goes empty). A boot-only bind therefore only ever works if the
-# cable was present at boot; after any unplug the device stops enumerating on
-# replug. Re-writing g1/UDC while plugged back in re-enumerates instantly with
-# no reboot, so usb-gadget-watch calls `rebind` on USB power/role uevents. It
-# blocks in the kernel between events; unlike /sbin/hotplug it does not fork a
-# shell for every unrelated uevent.
+# The sunxi OTG role manager clears the gadget's UDC binding on disconnect and
+# may select host role when a cable is attached later. BaseOS deliberately does
+# not run a reconnect helper or force the role: this shared port must remain
+# available for intentional USB-host peripherals. The supported contract is to
+# connect the host cable before powering on. After a disconnect, reboot with the
+# cable connected to restore adb.
 #
 # CRITICAL sunxi trap (measured on rg40xxv, 4.9.170): the role manager's role
 # attributes must NOT be touched by this script.
@@ -40,7 +36,6 @@
 SYS="${BASEOS_SYS_ROOT:-/sys}"
 FFS_DIR="${BASEOS_FFS_DIR:-/dev/usb-ffs/adb}"
 ADBD="${BASEOS_ADBD:-/usr/sbin/adbd}"
-WATCHER="${BASEOS_USB_WATCHER:-/usr/sbin/usb-gadget-watch}"
 STORAGE_DEVICE_FILE="${BASEOS_STORAGE_DEVICE_FILE:-/run/usb-storage-device}"
 MOUNTS="${BASEOS_PROC_MOUNTS:-/proc/mounts}"
 
@@ -76,14 +71,6 @@ gadget_is_bound() {
 	bound_udc=
 	[ -r "$GADGET/UDC" ] && IFS= read -r bound_udc < "$GADGET/UDC"
 	[ -n "$bound_udc" ]
-}
-
-start_watcher() {
-	[ -z "$TEST_MODE" ] || return 0
-	[ -x "$WATCHER" ] || return 0
-	if ! pidof usb-gadget-watch >/dev/null 2>&1; then
-		"$WATCHER" >/dev/null 2>&1 &
-	fi
 }
 
 storage_status() {
@@ -142,7 +129,6 @@ do_setup() {
 	# Idempotent re-entry (suspend/resume, manual re-run): a gadget that is
 	# already bound to a UDC is left completely alone.
 	if [ -d "$GADGET" ] && gadget_is_bound; then
-		start_watcher
 		return 0
 	fi
 
@@ -272,7 +258,7 @@ do_setup() {
 	done
 	# Boot-time breadcrumbs (repo convention, cf. rcS) — only on the FIRST
 	# successful bind: fast boot is a headline feature and these stamps are how a
-	# regression gets spotted. A later rebind must not overwrite them.
+	# regression gets spotted. A repeated setup must not overwrite them.
 	if [ -n "$adb_enabled" ] && [ -n "$bound" ] && [ ! -e /run/boot-adb-gadget-done ]; then
 		{ cut -d" " -f1 /proc/uptime > /run/boot-adb-gadget-done; } 2>/dev/null || true
 		if mountpoint -q /mnt/sdcard 2>/dev/null; then
@@ -286,48 +272,10 @@ do_setup() {
 			storage_status failed
 		fi
 	fi
-	start_watcher
-}
-
-do_rebind() {
-	# Only meaningful once setup has composed the gadget.
-	[ -d "$GADGET" ] || return 0
-	# Already bound? Nothing to do — this is the overwhelmingly common uevent
-	# (any USB power/role event, most of which don't clear the binding).
-	gadget_is_bound && return 0
-	# Need a controller to bind to.
-	udc="$(first_udc)"
-	[ -n "$udc" ] || return 0
-
-	if [ -z "$TEST_MODE" ]; then
-		# adbd normally survives a disconnect (the manager clears only the UDC
-		# binding; the functionfs mount and adbd's open ep files persist). If it
-		# has died and functionfs is still mounted, respawn it so ep0 carries the
-		# descriptors again before we bind.
-		if ! pidof adbd >/dev/null 2>&1; then
-			if grep -q " $FFS_DIR functionfs " /proc/mounts 2>/dev/null; then
-				"$ADBD" >/dev/null 2>&1 &
-			fi
-		fi
-	fi
-
-	# Re-write the UDC name. With adbd alive and its ep files open the bind is
-	# instant; if we just respawned adbd, retry briefly (~3s) while it writes the
-	# descriptors. Bounded, and a timeout is a silent no-op.
-	n=0
-	while [ "$n" -lt 12 ]; do
-		if echo "$udc" > "$GADGET/UDC" 2>/dev/null && gadget_is_bound; then
-			return 0
-		fi
-		sleep 0.25 2>/dev/null || sleep 1
-		n=$((n + 1))
-	done
-	return 0
 }
 
 case "${1:-setup}" in
-	setup)  do_setup ;;
-	rebind) do_rebind ;;
+	setup) do_setup ;;
 esac
 
 exit 0

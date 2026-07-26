@@ -75,7 +75,6 @@ Run checks relevant to the files changed. The main test entry points are:
 ./tests/test-update-apply.sh
 ./tests/test-boot-menu-held.sh
 ./tests/test-usb-gadget-adb.sh
-./tests/test-usb-gadget-watch.sh   # after build-tools.sh
 ./tests/test-usb-storage-mode.sh
 ./test-boot-qemu.sh rg40xxv
 ./test-update-roundtrip.sh rg40xxv   # needs build-image.sh + build-update.sh first
