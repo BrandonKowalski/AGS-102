@@ -215,28 +215,32 @@ one composite gadget. They cannot safely share the frontend *filesystem* with a
 running frontend, however: a writable FAT/exFAT volume must never be mounted by
 BaseOS and a USB host at the same time.
 
-The selected card can opt into an exclusive maintenance boot with an exact
-`USB_STORAGE=1` line in `/mnt/sdcard/BaseOS.conf`. This works for both layouts
-because rcS has already applied its normal selection rule: TF2
-(`/dev/mmcblk1p1`) when present, otherwise TF1's data partition
-(`/dev/mmcblk0p7`). `usb-storage-mode` resolves the device from `/proc/mounts`,
-syncs, and publishes it to the gadget only after `umount /mnt/sdcard` succeeds.
-Missing config/device and failed unmounts fail closed into a normal boot.
+Hold MENU from power-on to select an exclusive, one-boot maintenance mode. H700
+DTBs expose that built-in button as standard `BTN_MODE` on a `BUS_HOST` evdev
+device. The one-shot `boot-menu-held` helper reads the input core's current
+state with `EVIOCGKEY`; it has no event-number assumption, wait window, input
+loop or resident process. rcS checks it before mounting frontend storage. Whole
+TF2 (`/dev/mmcblk1`) wins when present so the host receives its real partition
+table and every partition; otherwise TF1's data partition
+(`/dev/mmcblk0p7`) is exported.
+
+`usb-storage-mode` publishes only a device that was never mounted during this
+boot. Both the selector and gadget reject a whole disk if *any* child partition
+is mounted. Missing or busy devices fail closed into a normal boot.
 
 `nextui-session` sees the runtime marker, does not remount the card or launch a
 frontend, and waits for the gadget's bounded ready/failure result. A successful
 bind paints one static `USB STORAGE: EJECT BEFORE RESTART` pill; failure paints
 `USB STORAGE FAILED: POWER OFF`, avoiding unsafe card-removal advice while the
 kernel may still hold the backing device. The gadget normally exposes both adb
-and the writable card; `/data/no-adb` makes this storage-only. Set
-`USB_STORAGE=0` or remove the line on the host, eject the volume, and restart to
-return to the frontend. A boot-time button chord was
-rejected: it adds model-specific input timing and a hidden mode when one
-deterministic config works on every target.
+and writable storage; `/data/no-adb` makes this storage-only. Eject on the host
+and restart without MENU to return to the frontend.
 
-**Boot-time stance.** Nothing here is on the critical path. The gadget script is
-backgrounded off the already-backgrounded `init.d/dev`, so it never delays
-`frontend-exec`. Two measurement hooks make the cost
+**Boot-time stance.** A normal boot performs one non-blocking input-state probe
+before mounting frontend storage; it has no wait loop or resident process. The
+gadget script is backgrounded off the already-backgrounded `init.d/dev`, so it
+never delays `frontend-exec`. The one-second TF2 enumeration allowance runs only
+after a MENU-requested maintenance boot. Two measurement hooks make the cost
 observable: the script writes `/run/boot-adb-gadget-done` when the UDC bind lands and
 appends `adb gadget ready` to `/mnt/sdcard/baseos-boot.log`; `init.d/dev` writes
 `/run/boot-dev-done` when it finishes. Because these live off the critical path, the

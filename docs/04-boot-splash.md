@@ -164,7 +164,7 @@ hand-off are discrete, synchronous pill overlays:
 | installer cannot run | `INSTALL FAILED` | none |
 | no installed frontend or installer | `ADD FRONTEND TO SD CARD` | none |
 | preparing the USB storage gadget | `STARTING USB STORAGE` | none |
-| frontend card exported over USB | `USB STORAGE: EJECT BEFORE RESTART` | none |
+| user storage exported over USB | `USB STORAGE: EJECT BEFORE RESTART` | none |
 | USB storage cannot bind | `USB STORAGE FAILED: POWER OFF` | none |
 
 The system-update pills carry **no version number**: version badges are an explicit

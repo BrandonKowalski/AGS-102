@@ -1,7 +1,8 @@
 #!/bin/sh
-# H700 base OS early init. Budget: well under one second — no sleeps,
-# anything slow runs in the background. Root filesystem is read-only;
-# all writable state is tmpfs or /data (p7, ext4).
+# H700 base OS early init. Normal-boot budget: well under one second — no
+# sleeps, anything slow runs in the background. The requested USB-storage path
+# may wait briefly for TF2 enumeration. Root filesystem is read-only; all
+# writable state is tmpfs or /data (p6, ext4).
 
 /bin/mount -t proc -o nodev,noexec,nosuid proc /proc
 /bin/mount -t sysfs -o nodev,noexec,nosuid sys /sys
@@ -96,42 +97,48 @@ fi
 # card already fills the disk.
 [ -x /usr/sbin/expand-storage ] && /usr/sbin/expand-storage
 
-# Mount the frontend/data card: TF2 (second slot) wins if present, else this
-# card's own "primary" FAT partition (p7).
-/bin/mkdir -p /mnt/sdcard
-for dev in /dev/mmcblk1p1 /dev/mmcblk0p7; do
-	[ -b "$dev" ] || continue
-	if /bin/mount -t vfat -o rw,utf8,noatime,shortname=mixed "$dev" /mnt/sdcard 2>/dev/null \
-		|| /bin/mount -t exfat -o rw,noatime "$dev" /mnt/sdcard 2>/dev/null; then
-		break
-	fi
-	# One repair attempt, then retry once.
-	/usr/sbin/fsck.fat -a "$dev" >/dev/null 2>&1
-	if /bin/mount -t vfat -o rw,utf8,noatime,shortname=mixed "$dev" /mnt/sdcard 2>/dev/null \
-		|| /bin/mount -t auto "$dev" /mnt/sdcard 2>/dev/null; then
-		break
-	fi
-done
-/bin/ln -sfn /mnt/sdcard /mnt/SDCARD
-
-# Boot breadcrumb on the card (readable from any computer).
-if /bin/mountpoint -q /mnt/sdcard 2>/dev/null; then
-	echo "$(/bin/cut -d' ' -f1 /proc/uptime) rcS reached card mount" >> /mnt/sdcard/baseos-boot.log
-fi
-
-# Optional USB-storage maintenance boot. The helper only publishes a block
-# device after it has safely unmounted /mnt/sdcard; nextui-session sees the
-# /run marker and keeps the frontend stopped while the host owns the volume.
+# MENU held from power-on selects a one-boot USB-storage maintenance mode. Check
+# the current evdev state once: no timing window, input loop, or normal-boot
+# delay. Because no frontend card has been mounted yet, TF2 can be exported as
+# a complete disk (partition table included); without TF2, export TF1's p7.
 USB_STORAGE_MODE=0
-if [ -x /usr/sbin/usb-storage-mode ] && /usr/sbin/usb-storage-mode prepare; then
+/bin/mkdir -p /mnt/sdcard
+if [ -x /usr/sbin/boot-menu-held ] \
+	&& /usr/sbin/boot-menu-held \
+	&& [ -x /usr/sbin/usb-storage-mode ] \
+	&& /usr/sbin/usb-storage-mode prepare; then
 	USB_STORAGE_MODE=1
 fi
+
+# Normal boot mounts the frontend/data card: TF2 p1 wins if usable, else this
+# card's own "primary" FAT partition (p7).
+if [ "$USB_STORAGE_MODE" -eq 0 ]; then
+	for dev in /dev/mmcblk1p1 /dev/mmcblk0p7; do
+		[ -b "$dev" ] || continue
+		if /bin/mount -t vfat -o rw,utf8,noatime,shortname=mixed "$dev" /mnt/sdcard 2>/dev/null \
+			|| /bin/mount -t exfat -o rw,noatime "$dev" /mnt/sdcard 2>/dev/null; then
+			break
+		fi
+		# One repair attempt, then retry once.
+		/usr/sbin/fsck.fat -a "$dev" >/dev/null 2>&1
+		if /bin/mount -t vfat -o rw,utf8,noatime,shortname=mixed "$dev" /mnt/sdcard 2>/dev/null \
+			|| /bin/mount -t auto "$dev" /mnt/sdcard 2>/dev/null; then
+			break
+		fi
+	done
+
+	# Boot breadcrumb on the card (readable from any computer).
+	if /bin/mountpoint -q /mnt/sdcard 2>/dev/null; then
+		echo "$(/bin/cut -d' ' -f1 /proc/uptime) rcS reached card mount" >> /mnt/sdcard/baseos-boot.log
+	fi
+fi
+/bin/ln -sfn /mnt/sdcard /mnt/SDCARD
 
 # System update: apply a *.bosupd payload the user copied onto the card. Costs
 # one failed glob on an ordinary boot; when a payload is present it writes the
 # inactive rootfs slot, verifies it, flips the GPT and reboots. Storage mode
-# leaves every card file to the USB host; the update runs after the user sets
-# USB_STORAGE=0 and restarts.
+# leaves every card file to the USB host; the update runs on the next normal
+# boot after the user ejects and restarts without MENU.
 if [ "$USB_STORAGE_MODE" -eq 0 ]; then
 	[ -x /usr/sbin/baseos-update ] && /usr/sbin/baseos-update apply
 fi

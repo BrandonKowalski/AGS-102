@@ -5,6 +5,7 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPT="$HERE/overlay/usr/sbin/usb-gadget-adb"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
+: > "$TMP/mounts-empty"
 
 # Build a fake /sys tree: one UDC and an (empty) configfs usb_gadget dir. On
 # macOS these are all just ordinary files/dirs, so the script's mkdir/echo
@@ -29,10 +30,12 @@ run_storage_gadget() {
 	sys="$1"
 	backing="$2"
 	disable_adb="${3:-}"
+	mounts="${4:-$TMP/mounts-empty}"
 	BASEOS_SYS_ROOT="$sys" \
 	BASEOS_FFS_DIR="$TMP/ffs" \
 	BASEOS_STORAGE_DEVICE="$backing" \
 	BASEOS_DISABLE_ADB="$disable_adb" \
+	BASEOS_PROC_MOUNTS="$mounts" \
 		sh "$SCRIPT" setup
 }
 
@@ -126,5 +129,25 @@ build_tree "$TMP/sys6"
 run_storage_gadget "$TMP/sys6" "$TMP/missing.img" 1
 [ ! -d "$TMP/sys6/kernel/config/usb_gadget/g1" ] \
 	|| { echo "gadget composed with no enabled valid function" >&2; exit 1; }
+
+# Defence in depth: a whole disk is invalid while any child partition remains
+# mounted. adb may still compose, but the mass-storage function must not.
+build_tree "$TMP/sys7"
+: > "$TMP/card3.img"
+printf '%sp1 %s/card vfat rw 0 0\n' "$TMP/card3.img" "$TMP" > "$TMP/mounts"
+run_storage_gadget "$TMP/sys7" "$TMP/card3.img" "" "$TMP/mounts"
+G7="$TMP/sys7/kernel/config/usb_gadget/g1"
+[ -L "$G7/configs/c.1/ffs.adb" ]
+[ ! -e "$G7/configs/c.1/mass_storage.usb0" ]
+[ "$(cat "$G7/configs/c.1/strings/0x409/configuration")" = "adb" ]
+
+# An unreadable mount table also rejects storage while preserving ordinary adb.
+build_tree "$TMP/sys8"
+: > "$TMP/card4.img"
+run_storage_gadget "$TMP/sys8" "$TMP/card4.img" "" "$TMP/no-such-mounts"
+G8="$TMP/sys8/kernel/config/usb_gadget/g1"
+[ -L "$G8/configs/c.1/ffs.adb" ]
+[ ! -e "$G8/configs/c.1/mass_storage.usb0" ]
+[ "$(cat "$G8/configs/c.1/strings/0x409/configuration")" = "adb" ]
 
 echo "usb-gadget-adb tests passed"

@@ -105,12 +105,12 @@ ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100   # serial console (harmless wi
    and `/var/lib/dbus/machine-id → /run/machine-id`
 7. **first-boot expand-to-fill** (`expand-storage`, [03](03-first-boot-and-expand.md))
    — runs *before* the card mount; a no-op once the card is provisioned
-8. mount the NextUI card: TF2 (`/dev/mmcblk1p1`) if present, else this card's own
-   `/dev/mmcblk0p7` → `/mnt/sdcard`, plus the `/mnt/SDCARD` compat symlink; write a
-   boot breadcrumb to the card
-8a. check `BaseOS.conf` for optional USB-storage maintenance mode; activate only
-    after the selected card unmounts successfully, then keep the frontend stopped
-    while the USB host owns it ([05](05-runtime-power-network.md) §6)
+8. sample the built-in MENU button's current evdev state once; when held, enter a
+   one-boot USB-storage maintenance mode *before* mounting frontend storage and
+   export whole TF2 when present, otherwise TF1 p7
+8a. on a normal boot, mount the NextUI card: TF2 (`/dev/mmcblk1p1`) if present,
+    else this card's own `/dev/mmcblk0p7` → `/mnt/sdcard`, plus the `/mnt/SDCARD`
+    compat symlink; write a boot breadcrumb to the card
 8b. `baseos-update apply` — one failed glob on an ordinary boot; when the user has
    copied a `*.bosupd` payload onto the card it writes the inactive rootfs slot,
    verifies it, flips the GPT and reboots; deferred while USB storage is active

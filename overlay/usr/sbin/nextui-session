@@ -30,8 +30,8 @@ important_splash() {
 		&& /usr/bin/baseos-splash --important "$@" 2>/dev/null
 }
 
-# rcS has unmounted the selected frontend card and handed its block device to
-# the USB gadget. Never race the host by remounting it or starting a frontend.
+# rcS has kept the selected device unmounted and handed it to the USB gadget.
+# Never race the host by mounting it or starting a frontend.
 # The host owns the volume until the next reboot; the static message names the
 # critical safety action without adding animation or a resident UI.
 if [ -s /run/usb-storage-device ]; then

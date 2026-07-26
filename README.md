@@ -30,7 +30,7 @@ Last change: **7.18 → 7.14 s** — static boot logo, ≈40 ms saved.
 - Full support for the handheld's display, sound, controls, networking, HDMI, and
   real suspend-to-RAM.
 - SSH/SFTP over Wi-Fi and adb over USB active by default.
-- Optional USB-storage maintenance mode for the selected frontend card.
+- MENU-at-power-on USB storage for TF2, or TF1's data volume when TF2 is absent.
 
 ## Installation
 
@@ -55,16 +55,12 @@ Development setup, build instructions, testing, and technical documentation are 
 
 ## USB access
 
-Connect a data-capable USB-C cable to use `adb shell`, `adb push`, or `adb pull`.
-To expose the selected frontend card as a writable USB drive instead, create
-`BaseOS.conf` at the card's root with this exact line:
+Connect a data-capable USB-C cable for adb.
 
-```ini
-USB_STORAGE=1
-```
+To access the SD card as a USB drive, hold **MENU** while powering on and keep
+holding it until the USB-storage message appears. BaseOS shares the complete
+TF2 card when one is inserted; otherwise it shares TF1's data partition. adb
+remains available.
 
-Restart the handheld. BaseOS stops the frontend, safely unmounts that card, and
-offers both the USB drive and adb. This selects TF2 in a two-card setup and the
-on-device data partition in a one-card setup. To return to normal, set the value
-to `0` (or remove the line), safely eject the drive on the computer, and restart
-the handheld.
+Eject the drive on the computer before restarting the handheld. Restart without
+holding MENU to return to normal.

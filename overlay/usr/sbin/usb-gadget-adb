@@ -42,6 +42,7 @@ FFS_DIR="${BASEOS_FFS_DIR:-/dev/usb-ffs/adb}"
 ADBD="${BASEOS_ADBD:-/usr/sbin/adbd}"
 WATCHER="${BASEOS_USB_WATCHER:-/usr/sbin/usb-gadget-watch}"
 STORAGE_DEVICE_FILE="${BASEOS_STORAGE_DEVICE_FILE:-/run/usb-storage-device}"
+MOUNTS="${BASEOS_PROC_MOUNTS:-/proc/mounts}"
 
 UDC_DIR="$SYS/class/udc"
 CONFIGFS="$SYS/kernel/config"
@@ -93,6 +94,16 @@ storage_status() {
 	esac
 }
 
+storage_device_or_child_is_mounted() {
+	device="$1"
+	# Fail closed when current mount ownership cannot be established.
+	[ -r "$MOUNTS" ] || return 0
+	awk -v device="$device" '
+		$1 == device || index($1, device "p") == 1 { found = 1 }
+		END { exit found ? 0 : 1 }
+	' "$MOUNTS" 2>/dev/null
+}
+
 do_setup() {
 	# adb defaults on (same posture as dropbear); /data/no-adb disables just the
 	# adb function. USB storage is independently selected by rcS, which writes
@@ -112,13 +123,15 @@ do_setup() {
 		if [ -n "$TEST_MODE" ]; then
 			[ -e "$storage_device" ] || storage_device=
 		else
-			# Defence in depth: rcS already unmounted it. Refuse a missing,
-			# non-block, or still-mounted backing device even if /run is stale.
+			# Defence in depth: rcS kept it unmounted. Refuse a missing
+			# or non-block backing device even if /run is stale.
 			[ -b "$storage_device" ] || storage_device=
-			if [ -n "$storage_device" ] \
-				&& grep -q "^$storage_device " /proc/mounts 2>/dev/null; then
-				storage_device=
-			fi
+		fi
+		# A whole-card LUN must reject mounted child partitions too. Checking
+		# only `/dev/mmcblk1` would miss `/dev/mmcblk1p1`.
+		if [ -n "$storage_device" ] \
+			&& storage_device_or_child_is_mounted "$storage_device"; then
+			storage_device=
 		fi
 	fi
 	if [ -z "$adb_enabled" ] && [ -z "$storage_device" ]; then

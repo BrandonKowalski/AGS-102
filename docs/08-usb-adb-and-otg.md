@@ -7,15 +7,16 @@ hardware findings behind the deliberately small implementation in
 ## Decision
 
 Enable USB-only adb by default alongside BaseOS's existing SSH/SFTP service, with an
-optional config-selected maintenance boot that exposes the selected frontend card as
-writable USB mass storage. Composition and recovery remain OS-owned; no frontend
-setting, udev/mdev dependency, DTB change, polling loop, button timing, or USB-role
-override is added. `/data/no-adb` is the persistent adb opt-out.
+optional BaseOS-owned maintenance boot that exposes user storage as writable USB mass
+storage. Hold MENU from power-on; a one-shot evdev state query selects the mode before
+the frontend card is mounted. Whole TF2 wins when present, otherwise TF1 p7 is
+exported. No frontend setting, udev/mdev dependency, DTB change, polling loop, timing
+window, or USB-role override is added. `/data/no-adb` is the persistent adb opt-out.
 
 The default behavior is the user-friendly one: connect a data-capable USB-C cable and
 use `adb shell`, `adb push`, or `adb pull`. Unplugging and reconnecting should not
-require a reboot or a handheld key combination. For writable card access, put
-`USB_STORAGE=1` in the selected card's root `BaseOS.conf` and restart.
+require a reboot or a handheld key combination. For writable storage, hold MENU while
+powering on and keep it held until the storage message appears.
 
 ## Verified H700 hardware contract
 
@@ -111,22 +112,24 @@ The real frontend volume is different from a disposable backing file: BaseOS nor
 mounts and executes the frontend from it, so sharing it live would risk filesystem
 corruption. Storage mode is therefore an exclusive maintenance boot:
 
-1. rcS mounts the normal selected card (TF2 first, otherwise TF1 p7);
-2. an exact, CRLF-safe `USB_STORAGE=1` line enables the mode;
-3. BaseOS resolves the mounted block device, syncs, and must successfully unmount it;
-4. only then is the device path published to the configfs mass-storage function;
-5. the frontend stays stopped while the host owns the card;
-6. the user sets the value to `0` or removes it, ejects the host volume, and restarts.
+1. the user holds MENU from power-on;
+2. `boot-menu-held` scans built-in `BUS_HOST` evdev devices and samples standard
+   `BTN_MODE` with `EVIOCGKEY`;
+3. before mounting frontend storage, BaseOS chooses whole TF2 when present, otherwise
+   TF1 p7;
+4. only an existing, completely unmounted device is published to configfs;
+5. the frontend stays stopped while the host owns the device;
+6. the user ejects on the host and restarts without MENU.
 
-Every unsafe state fails closed. A missing/invalid config or block device does nothing;
-a failed unmount never publishes a device; and the gadget rechecks that the block
-device is not mounted before accepting it. `/data/no-adb` removes the FunctionFS
-function but leaves a requested mass-storage function available.
+Exporting whole TF2 lets the host see its real partition table, access every supported
+partition, and deliberately repartition or format the removable card. TF1 remains
+partition-backed: the running root and `/data` make whole-TF1 export unsafe without a
+separate RAM-root recovery design.
 
-A restart button chord was considered and rejected. Detecting it before card mount
-would couple policy to model-specific input mappings and timing, while a visible config
-file is deterministic, editable from any computer, and identical in one- and two-card
-setups.
+Every unsafe state fails closed. A missing block device does nothing, and both the
+selector and gadget reject a whole device when it or any `pN` child remains mounted.
+`/data/no-adb` removes the FunctionFS function but leaves requested mass storage
+available.
 
 ## Validation
 
@@ -142,8 +145,9 @@ absence of a TCP 5555 listener. RG40XXV hardware validation completed:
 4. physical unplug/replug and suspend/resume remain release-image acceptance checks;
 5. charging state and boot-time markers remain release-image acceptance checks.
 
-Mass-storage validation additionally covers exact/CRLF config parsing, failed-unmount
-and missing-device rejection, ADB+storage and storage-only composition, concurrent host
-enumeration, and the visible maintenance state. A real-card test still needs a backed-up
-frontend card and must verify safe host write/eject/reboot in both one- and two-card
-layouts.
+Mass-storage validation additionally covers MENU selection policy, TF2 whole-device
+promotion, mounted-child and missing-device rejection, ADB+storage and storage-only
+composition, concurrent host enumeration, and the visible maintenance state.
+Real-card acceptance must verify
+MENU-held detection, host write/eject/reboot for TF1 p7, and whole-card enumeration
+with a backed-up multi-partition TF2.

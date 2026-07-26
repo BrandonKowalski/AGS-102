@@ -1,42 +1,62 @@
 #!/bin/sh
-# Prepare the selected frontend card for safe USB mass-storage export.
+# Select safely unmounted user storage for a MENU-requested maintenance boot.
 #
-# The card must never be mounted by BaseOS while a USB host can write it. This
-# helper activates only for an exact USB_STORAGE=1 line in BaseOS.conf, resolves
-# the block device from the existing /mnt/sdcard mount, and publishes that
-# device to /run only after unmount succeeds. A failure is a normal-boot no-op.
+# rcS calls this before mounting a frontend card. Export the whole TF2 disk
+# when it exists, otherwise TF1's p7 data volume. A writable device must never
+# be mounted by BaseOS while a USB host can write it; every failure is a
+# normal-boot no-op.
 
-SD="${BASEOS_STORAGE_MOUNTPOINT:-/mnt/sdcard}"
 MOUNTS="${BASEOS_PROC_MOUNTS:-/proc/mounts}"
 RUN="${BASEOS_RUN_ROOT:-/run}"
-UMOUNT="${BASEOS_UMOUNT:-umount}"
-CONFIG="$SD/BaseOS.conf"
+SLEEP="${BASEOS_SLEEP:-sleep}"
+TF1_DATA="${BASEOS_STORAGE_TF1_DEVICE:-/dev/mmcblk0p7}"
+TF2_DISK="${BASEOS_STORAGE_TF2_DEVICE:-/dev/mmcblk1}"
 DEVICE_FILE="$RUN/usb-storage-device"
 PENDING="$RUN/usb-storage-device.pending"
 
+device_exists() {
+	if [ -n "${BASEOS_STORAGE_TEST_MODE:-}" ]; then
+		[ -e "$1" ]
+	else
+		[ -b "$1" ]
+	fi
+}
+
+device_or_child_is_mounted() {
+	device="$1"
+	whole_disk="$2"
+	# If mount state cannot be proven, do not hand a writable block device to
+	# another kernel.
+	[ -r "$MOUNTS" ] || return 0
+	awk -v device="$device" -v whole="$whole_disk" '
+		$1 == device { found = 1 }
+		whole == 1 && index($1, device "p") == 1 { found = 1 }
+		END { exit found ? 0 : 1 }
+	' "$MOUNTS" 2>/dev/null
+}
+
 [ "${1:-prepare}" = prepare ] || exit 2
-[ -f "$CONFIG" ] || exit 1
 
-# Windows editors commonly leave CRLF endings. Do not source this root-owned
-# policy file: accept only one literal key/value line and ignore everything
-# else.
-head -c 4096 "$CONFIG" | tr -d '\r' | grep -qx 'USB_STORAGE=1' || exit 1
-
-device="$(awk -v mountpoint="$SD" '$2 == mountpoint { print $1; exit }' "$MOUNTS" 2>/dev/null)"
-[ -n "$device" ] || exit 1
-if [ -n "${BASEOS_STORAGE_TEST_MODE:-}" ]; then
-	[ -e "$device" ] || exit 1
-else
-	[ -b "$device" ] || exit 1
+# TF2 can enumerate slightly after the boot card. This wait exists only on the
+# explicitly requested maintenance path; normal boot never sleeps.
+if [ -z "${BASEOS_STORAGE_TEST_MODE:-}" ]; then
+	waited=0
+	while ! device_exists "$TF2_DISK" && [ "$waited" -lt 10 ]; do
+		"$SLEEP" 0.1 2>/dev/null || "$SLEEP" 1
+		waited=$((waited + 1))
+	done
 fi
+
+device="$TF1_DATA"
+whole_disk=0
+if device_exists "$TF2_DISK"; then
+	device="$TF2_DISK"
+	whole_disk=1
+fi
+device_exists "$device" || exit 1
+device_or_child_is_mounted "$device" "$whole_disk" && exit 1
 
 mkdir -p "$RUN" 2>/dev/null || exit 1
 printf '%s\n' "$device" > "$PENDING" 2>/dev/null || exit 1
 sync
-if "$UMOUNT" "$SD" 2>/dev/null; then
-	mv "$PENDING" "$DEVICE_FILE" 2>/dev/null || exit 1
-	exit 0
-fi
-
-rm -f "$PENDING"
-exit 1
+mv "$PENDING" "$DEVICE_FILE" 2>/dev/null || exit 1
