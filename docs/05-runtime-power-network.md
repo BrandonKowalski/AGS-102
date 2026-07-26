@@ -216,13 +216,15 @@ running frontend, however: a writable FAT/exFAT volume must never be mounted by
 BaseOS and a USB host at the same time.
 
 Hold MENU from power-on to select an exclusive, one-boot maintenance mode. H700
-DTBs expose that built-in button as standard `BTN_MODE` on a `BUS_HOST` evdev
-device. The one-shot `boot-menu-held` helper reads the input core's current
-state with `EVIOCGKEY`; it has no event-number assumption, wait window, input
-loop or resident process. rcS checks it before mounting frontend storage. Whole
-TF2 (`/dev/mmcblk1`) wins when present so the host receives its real partition
-table and every partition; otherwise TF1's data partition
-(`/dev/mmcblk0p7`) is exported.
+DTBs label that built-in button's active-low line `GPIO Key Menu`. The vendor
+input driver advertises standard `BTN_MODE` but does not maintain the
+`EVIOCGKEY` current-state bitmap, so the small `boot-menu-held` script queries
+the physical level from the already-mounted GPIO debug view. It has no wait
+window, input loop, compiled helper or resident process. rcS checks it before
+mounting frontend storage. Whole TF2
+(`/dev/mmcblk1`) wins when present so the host receives its real partition table
+and every partition; otherwise TF1's data partition (`/dev/mmcblk0p7`) is
+exported.
 
 `usb-storage-mode` publishes only a device that was never mounted during this
 boot. Both the selector and gadget reject a whole disk if *any* child partition

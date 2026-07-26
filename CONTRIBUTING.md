@@ -73,7 +73,7 @@ Run checks relevant to the files changed. The main test entry points are:
 ./tests/test-rtc-utc-policy.sh
 ./tests/test-gpt-slot.sh
 ./tests/test-update-apply.sh
-./tests/test-boot-menu-held.sh      # after build-tools.sh
+./tests/test-boot-menu-held.sh
 ./tests/test-usb-gadget-adb.sh
 ./tests/test-usb-gadget-watch.sh   # after build-tools.sh
 ./tests/test-usb-storage-mode.sh

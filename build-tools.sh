@@ -11,7 +11,6 @@
 #   work/tools/sftp-server    (OpenSSH sftp subsystem child for dropbear)
 #   work/tools/adbd           (Android adb daemon, USB-only, static)
 #   work/tools/usb-gadget-watch (event-driven H700 USB gadget rebind watcher)
-#   work/tools/boot-menu-held (one-shot BTN_MODE state probe for storage boot)
 # Must use --platform linux/arm64 so the produced binaries are aarch64 for the
 # handheld (native on Apple Silicon; QEMU on Intel hosts).
 set -eu
@@ -66,9 +65,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out al
 
 # fbsplash: framebuffer boot splash (Lexend wordmark via freetype).
 # usb-gadget-watch: zero-dependency uevent listener that keeps the H700 adb
-# gadget bound across USB-C disconnects.
-# boot-menu-held: zero-dependency, one-shot evdev state probe; unlike the
-# watcher it never remains resident. All three sources live under src/.
+# gadget bound across USB-C disconnects. Both sources live under src/.
 docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   -v "$TOOLS":/out -v "$HERE/src":/src:ro alpine:3.20 sh -euc '
   apk add -q build-base linux-headers pkgconf \
@@ -79,9 +76,6 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   gcc -static -O2 -Wall -Wextra -Werror \
     -o /out/usb-gadget-watch /src/usb-gadget-watch.c
   strip /out/usb-gadget-watch
-  gcc -static -O2 -Wall -Wextra -Werror \
-    -o /out/boot-menu-held /src/boot-menu-held.c
-  strip /out/boot-menu-held
 '
 
 # gptgrow: zero-dependency static tool that grows the last GPT partition to
@@ -155,8 +149,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
 
 file "$TOOLS/busybox" "$TOOLS/dropbearmulti" "$TOOLS/curl" \
   "$TOOLS/fbsplash" "$TOOLS/gptgrow" "$TOOLS/gptslot" "$TOOLS/sftp-server" \
-  "$TOOLS/adbd" "$TOOLS/usb-gadget-watch" "$TOOLS/boot-menu-held" \
-  2>/dev/null || true
+  "$TOOLS/adbd" "$TOOLS/usb-gadget-watch" 2>/dev/null || true
 [ -x "$TOOLS/gptslot" ] || { echo "gptslot build did not produce an executable" >&2; exit 1; }
 [ -x "$TOOLS/curl" ] || { echo "curl build did not produce an executable" >&2; exit 1; }
 file "$TOOLS/curl" | grep -q "statically linked" \
@@ -173,10 +166,6 @@ file "$TOOLS/adbd" | grep -q "statically linked" \
   || { echo "usb-gadget-watch build did not produce an executable" >&2; exit 1; }
 file "$TOOLS/usb-gadget-watch" | grep -q "statically linked" \
   || { echo "usb-gadget-watch build is not static" >&2; exit 1; }
-[ -x "$TOOLS/boot-menu-held" ] \
-  || { echo "boot-menu-held build did not produce an executable" >&2; exit 1; }
-file "$TOOLS/boot-menu-held" | grep -q "statically linked" \
-  || { echo "boot-menu-held build is not static" >&2; exit 1; }
 
 # Record the sources these binaries came from so the build scripts can tell a
 # reusable work/tools from a stale one.

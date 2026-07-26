@@ -8,10 +8,12 @@ hardware findings behind the deliberately small implementation in
 
 Enable USB-only adb by default alongside BaseOS's existing SSH/SFTP service, with an
 optional BaseOS-owned maintenance boot that exposes user storage as writable USB mass
-storage. Hold MENU from power-on; a one-shot evdev state query selects the mode before
-the frontend card is mounted. Whole TF2 wins when present, otherwise TF1 p7 is
-exported. No frontend setting, udev/mdev dependency, DTB change, polling loop, timing
-window, or USB-role override is added. `/data/no-adb` is the persistent adb opt-out.
+storage. Hold MENU from power-on; a one-shot state query selects the mode before
+the frontend card is mounted. It reads the DT-labelled active-low GPIO because
+the vendor driver's evdev current-state bitmap is stale. Whole TF2 wins when
+present, otherwise TF1 p7 is exported. No frontend setting, udev/mdev
+dependency, DTB change, compiled helper, polling loop, timing window, or
+USB-role override is added. `/data/no-adb` is the persistent adb opt-out.
 
 The default behavior is the user-friendly one: connect a data-capable USB-C cable and
 use `adb shell`, `adb push`, or `adb pull`. Unplugging and reconnecting should not
@@ -113,8 +115,9 @@ mounts and executes the frontend from it, so sharing it live would risk filesyst
 corruption. Storage mode is therefore an exclusive maintenance boot:
 
 1. the user holds MENU from power-on;
-2. `boot-menu-held` scans built-in `BUS_HOST` evdev devices and samples standard
-   `BTN_MODE` with `EVIOCGKEY`;
+2. `boot-menu-held` reads the DT-labelled physical GPIO level because the
+   vendor driver advertises standard `BTN_MODE` but does not keep
+   `EVIOCGKEY` state current;
 3. before mounting frontend storage, BaseOS chooses whole TF2 when present, otherwise
    TF1 p7;
 4. only an existing, completely unmounted device is published to configfs;
