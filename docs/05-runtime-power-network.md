@@ -143,7 +143,7 @@ that `launch.sh` acts on; BusyBox init runs the poweroff/reboot. A **long-press 
 off in hardware** at the AXP2202 PMIC regardless of software — normal, expected
 force-off behaviour.
 
-## 6. USB gadget — adb over the charge port
+## 6. USB gadget — adb and optional card storage
 
 The single USB-C port is a charge port that also exposes a USB peripheral controller.
 Base OS drives it as a Google adb gadget so a host can `adb shell`/`adb push`/`adb pull`
@@ -189,9 +189,50 @@ first, then **retries** writing the controller name into `g1/UDC`
 has populated ep0 fails with `EINVAL`; the retry loop closes that race without a fixed
 sleep.
 
-**Idempotency / suspend-resume.** The script is safe to re-run: if `g1` already exists
-and is bound it is a no-op. The gadget survives deep-sleep (§2) — the controller
-re-enumerates on resume with the descriptors still in place; nothing re-composes it.
+**Disconnect / reconnect.** The sunxi OTG manager clears `g1/UDC` whenever VBUS
+drops, although the composed gadget, FunctionFS mount, and `adbd` survive. A boot-only
+bind therefore fails after the first unplug. `usb-gadget-watch` is a 65 KiB static
+process that blocks on the kernel uevent netlink socket and reads `g1/UDC` only after
+USB/power events. If the attribute is empty it invokes the script's bounded `rebind`
+action; an already-bound gadget is a no-op.
+
+This deliberately does not use the kernel `/sbin/hotplug` helper. An idle RG40XXV
+emits a battery `power_supply/change` uevent about every 10.24 seconds, so that
+mechanism would fork a helper process continuously. The resident listener receives
+the same events without polling or fork-per-event, and freezes naturally with the
+rest of userspace during suspend. Reading `g1/UDC` is essential: configfs attributes
+report a synthetic nonzero stat size even when empty, so `test -s` gives the wrong
+answer on-device.
+
+**User stance.** adb is on by default, matching SSH/SFTP, but is reachable only by a
+physically connected USB data cable; the daemon has no TCP 5555 fallback. Create
+`/data/no-adb` and reboot to disable it. No frontend setting is required, keeping this
+OS-owned developer access independent of the installed frontend.
+
+**USB-storage maintenance mode.** The same kernel also has
+`CONFIG_USB_CONFIGFS_MASS_STORAGE=y`, and adb and mass storage work together as
+one composite gadget. They cannot safely share the frontend *filesystem* with a
+running frontend, however: a writable FAT/exFAT volume must never be mounted by
+BaseOS and a USB host at the same time.
+
+The selected card can opt into an exclusive maintenance boot with an exact
+`USB_STORAGE=1` line in `/mnt/sdcard/BaseOS.conf`. This works for both layouts
+because rcS has already applied its normal selection rule: TF2
+(`/dev/mmcblk1p1`) when present, otherwise TF1's data partition
+(`/dev/mmcblk0p7`). `usb-storage-mode` resolves the device from `/proc/mounts`,
+syncs, and publishes it to the gadget only after `umount /mnt/sdcard` succeeds.
+Missing config/device and failed unmounts fail closed into a normal boot.
+
+`nextui-session` sees the runtime marker, does not remount the card or launch a
+frontend, and waits for the gadget's bounded ready/failure result. A successful
+bind paints one static `USB STORAGE: EJECT BEFORE RESTART` pill; failure paints
+`USB STORAGE FAILED: POWER OFF`, avoiding unsafe card-removal advice while the
+kernel may still hold the backing device. The gadget normally exposes both adb
+and the writable card; `/data/no-adb` makes this storage-only. Set
+`USB_STORAGE=0` or remove the line on the host, eject the volume, and restart to
+return to the frontend. A boot-time button chord was
+rejected: it adds model-specific input timing and a hidden mode when one
+deterministic config works on every target.
 
 **Boot-time stance.** Nothing here is on the critical path. The gadget script is
 backgrounded off the already-backgrounded `init.d/dev`, so it never delays

@@ -108,9 +108,13 @@ ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100   # serial console (harmless wi
 8. mount the NextUI card: TF2 (`/dev/mmcblk1p1`) if present, else this card's own
    `/dev/mmcblk0p7` → `/mnt/sdcard`, plus the `/mnt/SDCARD` compat symlink; write a
    boot breadcrumb to the card
-8a. `baseos-update apply` — one failed glob on an ordinary boot; when the user has
+8a. check `BaseOS.conf` for optional USB-storage maintenance mode; activate only
+    after the selected card unmounts successfully, then keep the frontend stopped
+    while the USB host owns it ([05](05-runtime-power-network.md) §6)
+8b. `baseos-update apply` — one failed glob on an ordinary boot; when the user has
    copied a `*.bosupd` payload onto the card it writes the inactive rootfs slot,
-   verifies it, flips the GPT and reboots ([07](07-partition-layout-and-updates.md))
+   verifies it, flips the GPT and reboots; deferred while USB storage is active
+   ([07](07-partition-layout-and-updates.md))
 9. start dev extras (`/etc/init.d/dev` → dropbear SSH/sftp-server and the
    backgrounded adb-over-USB gadget via `usb-gadget-adb`, see
    [05](05-runtime-power-network.md) §6) in the background

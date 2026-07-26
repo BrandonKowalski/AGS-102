@@ -73,6 +73,9 @@ Run checks relevant to the files changed. The main test entry points are:
 ./tests/test-rtc-utc-policy.sh
 ./tests/test-gpt-slot.sh
 ./tests/test-update-apply.sh
+./tests/test-usb-gadget-adb.sh
+./tests/test-usb-gadget-watch.sh   # after build-tools.sh
+./tests/test-usb-storage-mode.sh
 ./test-boot-qemu.sh rg40xxv
 ./test-update-roundtrip.sh rg40xxv   # needs build-image.sh + build-update.sh first
 ./validate-on-device.sh rg40xxv DEVICE_IP ROOT_PASSWORD
@@ -103,3 +106,4 @@ enforced by `validate-on-device.sh`.
 - [Runtime, boot timing, power, and networking](docs/05-runtime-power-network.md)
 - [Hardware status and lessons learned](docs/06-status-and-lessons.md)
 - [Partition layout and A/B system updates](docs/07-partition-layout-and-updates.md)
+- [USB adb and H700 OTG investigation](docs/08-usb-adb-and-otg.md)

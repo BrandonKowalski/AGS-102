@@ -29,7 +29,8 @@ Last change: **7.18 → 7.14 s** — static boot logo, ≈40 ms saved.
   "format this disk?" prompts on Windows.
 - Full support for the handheld's display, sound, controls, networking, HDMI, and
   real suspend-to-RAM.
-- SSH active by default.
+- SSH/SFTP over Wi-Fi and adb over USB active by default.
+- Optional USB-storage maintenance mode for the selected frontend card.
 
 ## Installation
 
@@ -51,3 +52,19 @@ one-card or two-card configurations.
 
 Development setup, build instructions, testing, and technical documentation are in
 **[CONTRIBUTING.md](CONTRIBUTING.md)**.
+
+## USB access
+
+Connect a data-capable USB-C cable to use `adb shell`, `adb push`, or `adb pull`.
+To expose the selected frontend card as a writable USB drive instead, create
+`BaseOS.conf` at the card's root with this exact line:
+
+```ini
+USB_STORAGE=1
+```
+
+Restart the handheld. BaseOS stops the frontend, safely unmounts that card, and
+offers both the USB drive and adb. This selects TF2 in a two-card setup and the
+on-device data partition in a one-card setup. To return to normal, set the value
+to `0` (or remove the line), safely eject the drive on the computer, and restart
+the handheld.

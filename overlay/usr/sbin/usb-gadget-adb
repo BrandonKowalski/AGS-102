@@ -1,13 +1,28 @@
 #!/bin/sh
-# Bring up an adb-over-USB gadget (dev images only), started by init.d/dev.
+# Bring up (and keep up) the BaseOS USB gadget.
 #
-# This is a pure developer convenience and NEVER a boot dependency: there is no
+# Two actions, dispatched on $1 (default: setup):
+#   setup   compose the configfs gadget, start adbd, do the initial bind, and
+#           start the event-driven rebind watcher. Run once by init.d/dev.
+#   rebind  fast path: if the gadget exists but has become unbound, re-bind it
+#           to the UDC. This is what makes a replug re-enumerate — see below.
+#
+# This is an optional convenience and NEVER a boot dependency: there is no
 # `set -e`, every failure path exits 0 silently, and every wait is a bounded
 # loop. If the kernel USB bits or the hardware are absent the whole thing is a
-# no-op. init.d/dev launches it backgrounded so it never serialises boot.
+# no-op. init.d/dev launches setup backgrounded so it never serialises boot.
 #
-# CRITICAL sunxi trap (measured on rg40xxv, 4.9.170): the USB role manager's
-# role attributes must NOT be touched by this script.
+# Why the rebind action exists: the sunxi OTG role manager CLEARS the gadget's
+# UDC binding on every USB disconnect / VBUS drop (dmesg: USB_STATE=DISCONNECTED
+# then g1/UDC goes empty). A boot-only bind therefore only ever works if the
+# cable was present at boot; after any unplug the device stops enumerating on
+# replug. Re-writing g1/UDC while plugged back in re-enumerates instantly with
+# no reboot, so usb-gadget-watch calls `rebind` on USB power/role uevents. It
+# blocks in the kernel between events; unlike /sbin/hotplug it does not fork a
+# shell for every unrelated uevent.
+#
+# CRITICAL sunxi trap (measured on rg40xxv, 4.9.170): the role manager's role
+# attributes must NOT be touched by this script.
 #   * Writing usbc0/otg_role (e.g. "usb_device") wedges the writer in an
 #     uninterruptible (D) kernel state forever — reproduced both with and
 #     without a gadget bound — so a boot script that wrote it would leak a
@@ -15,15 +30,18 @@
 #   * The siblings usbc0/usb_device, usbc0/usb_host, usbc0/usb_null are 0400
 #     READ-triggers — merely cat-ing one switches the controller role and can
 #     wedge the port.
-# We therefore leave the manager in its default auto (ID-pin/VBUS) mode: the
-# built-in UDC is always present, we bind our gadget to it, and the manager
-# auto-selects peripheral mode when a host cable is attached. This also leaves
-# charging on the shared USB-C port undisturbed.
+# We only ever write g1/UDC (the safe, proven mechanism) and leave the manager
+# in its default auto (ID-pin/VBUS) mode: the built-in UDC is always present, we
+# bind our gadget to it, and the manager auto-selects peripheral mode when a
+# host cable is attached. This also leaves charging on the shared port alone.
 
 # Env-overridable roots so the unit test can drive a fake tree on a non-Linux
 # host (see tests/test-usb-gadget-adb.sh); the same pattern timedatectl uses.
 SYS="${BASEOS_SYS_ROOT:-/sys}"
 FFS_DIR="${BASEOS_FFS_DIR:-/dev/usb-ffs/adb}"
+ADBD="${BASEOS_ADBD:-/usr/sbin/adbd}"
+WATCHER="${BASEOS_USB_WATCHER:-/usr/sbin/usb-gadget-watch}"
+STORAGE_DEVICE_FILE="${BASEOS_STORAGE_DEVICE_FILE:-/run/usb-storage-device}"
 
 UDC_DIR="$SYS/class/udc"
 CONFIGFS="$SYS/kernel/config"
@@ -39,104 +57,264 @@ else
 	TEST_MODE=
 fi
 
-# 1. Idempotent re-entry (suspend/resume, manual re-run): a gadget that is
-#    already bound to a UDC is left completely alone.
-if [ -d "$GADGET" ] && [ -s "$GADGET/UDC" ]; then
-	exit 0
-fi
-
-# 2. Wait up to ~5s for a UDC to appear. None => no USB device controller on
-#    this kernel/board; a silent no-op is the correct behaviour. (We do NOT
-#    force the role — see the trap above; the UDC is present regardless.)
-udc=
-n=0
-while [ "$n" -lt 20 ]; do
+# first_udc: echo the name of the first UDC, or return 1 if none is present.
+# A single scan with no wait — callers that need to wait loop around it.
+first_udc() {
 	for u in "$UDC_DIR"/*; do
 		[ -e "$u" ] || continue
-		udc="${u##*/}"
-		break
+		echo "${u##*/}"
+		return 0
 	done
-	[ -n "$udc" ] && break
-	sleep 0.25 2>/dev/null || sleep 1
-	n=$((n + 1))
-done
-[ -n "$udc" ] || exit 0
+	return 1
+}
 
-# 3. configfs carries the gadget tree. Mount it if the kernel hasn't; bail if
-#    this kernel lacks CONFIGFS_F_FS (no usb_gadget dir).
-if [ -z "$TEST_MODE" ]; then
-	if ! grep -q " $CONFIGFS configfs " /proc/mounts 2>/dev/null; then
-		mount -t configfs none "$CONFIGFS" 2>/dev/null
+gadget_is_bound() {
+	# Configfs attributes report a synthetic non-zero stat size even when their
+	# contents are empty, so `test -s g1/UDC` is wrong on the real kernel. Read
+	# the value instead (the fake-tree unit test catches the same contract).
+	bound_udc=
+	[ -r "$GADGET/UDC" ] && IFS= read -r bound_udc < "$GADGET/UDC"
+	[ -n "$bound_udc" ]
+}
+
+start_watcher() {
+	[ -z "$TEST_MODE" ] || return 0
+	[ -x "$WATCHER" ] || return 0
+	if ! pidof usb-gadget-watch >/dev/null 2>&1; then
+		"$WATCHER" >/dev/null 2>&1 &
 	fi
-fi
-[ -d "$CONFIGFS/usb_gadget" ] || exit 0
+}
 
-# 4. Compose gadget g1. mkdir -p is safe on configfs (returns 0 on an existing
-#    node) so re-runs before a bind just re-assert the same values.
-mkdir -p "$GADGET" 2>/dev/null || exit 0
-# Android's host-side adb matches its interface by class/subclass/protocol
-# (ff/42/01), NOT by these ids — they are the conventional Android VID/PID and
-# only need to be present and consistent.
-echo 0x18d1 > "$GADGET/idVendor" 2>/dev/null
-echo 0x4e42 > "$GADGET/idProduct" 2>/dev/null
-
-# Serial: prefer the bootloader's androidboot.serialno, then the machine-id,
-# then a constant — it only has to be a stable non-empty string.
-serial=
-for w in $(cat /proc/cmdline 2>/dev/null); do
-	case "$w" in
-		androidboot.serialno=*) serial="${w#androidboot.serialno=}" ;;
+storage_status() {
+	[ -z "$TEST_MODE" ] || return 0
+	case "$1" in
+		ready)  : > /run/usb-storage-ready ;;
+		failed) : > /run/usb-storage-failed ;;
 	esac
-done
-[ -n "$serial" ] || { [ -s /run/machine-id ] && IFS= read -r serial < /run/machine-id; }
-[ -n "$serial" ] || serial=baseos
+}
 
-# Product string = the device model from /etc/baseos-release (build-rootfs bakes
-# BASEOS_MODEL there); fall back to a constant.
-BASEOS_MODEL=BaseOS
-[ -r /etc/baseos-release ] && . /etc/baseos-release 2>/dev/null
-model="${BASEOS_MODEL:-BaseOS}"
-
-mkdir -p "$GADGET/strings/0x409" 2>/dev/null
-echo "$serial" > "$GADGET/strings/0x409/serialnumber" 2>/dev/null
-echo BaseOS     > "$GADGET/strings/0x409/manufacturer" 2>/dev/null
-echo "$model"   > "$GADGET/strings/0x409/product" 2>/dev/null
-
-mkdir -p "$GADGET/functions/ffs.adb" 2>/dev/null
-mkdir -p "$GADGET/configs/c.1/strings/0x409" 2>/dev/null
-echo adb > "$GADGET/configs/c.1/strings/0x409/configuration" 2>/dev/null
-[ -e "$GADGET/configs/c.1/ffs.adb" ] \
-	|| ln -s "$GADGET/functions/ffs.adb" "$GADGET/configs/c.1/ffs.adb" 2>/dev/null
-
-# 5. functionfs endpoint + the daemon that services it.
-mkdir -p "$FFS_DIR" 2>/dev/null
-if [ -z "$TEST_MODE" ]; then
-	if ! grep -q " $FFS_DIR functionfs " /proc/mounts 2>/dev/null; then
-		mount -t functionfs adb "$FFS_DIR" 2>/dev/null
+do_setup() {
+	# adb defaults on (same posture as dropbear); /data/no-adb disables just the
+	# adb function. USB storage is independently selected by rcS, which writes
+	# the safely-unmounted block device into /run. The env overrides are test
+	# hooks and also make one-off diagnosis possible without changing policy.
+	adb_enabled=1
+	if [ -e /data/no-adb ] || [ -n "${BASEOS_DISABLE_ADB:-}" ]; then
+		adb_enabled=
 	fi
-	pidof adbd >/dev/null 2>&1 || /usr/sbin/adbd >/dev/null 2>&1 &
-fi
-
-# 6. Bind: the UDC only accepts the gadget once adbd has written the function's
-#    descriptors to ep0 of the functionfs mount, so the first writes fail with
-#    -EINVAL. Retry for up to ~10s; a timeout is still a silent no-op.
-bound=
-n=0
-while [ "$n" -lt 40 ]; do
-	if echo "$udc" > "$GADGET/UDC" 2>/dev/null && [ -s "$GADGET/UDC" ]; then
-		bound=1
-		break
+	storage_device="${BASEOS_STORAGE_DEVICE:-}"
+	if [ -z "$storage_device" ] && [ -r "$STORAGE_DEVICE_FILE" ]; then
+		IFS= read -r storage_device < "$STORAGE_DEVICE_FILE"
 	fi
-	sleep 0.25 2>/dev/null || sleep 1
-	n=$((n + 1))
-done
-[ -n "$bound" ] || exit 0
+	storage_requested=
+	[ -n "$storage_device" ] && storage_requested=1
+	if [ -n "$storage_device" ]; then
+		if [ -n "$TEST_MODE" ]; then
+			[ -e "$storage_device" ] || storage_device=
+		else
+			# Defence in depth: rcS already unmounted it. Refuse a missing,
+			# non-block, or still-mounted backing device even if /run is stale.
+			[ -b "$storage_device" ] || storage_device=
+			if [ -n "$storage_device" ] \
+				&& grep -q "^$storage_device " /proc/mounts 2>/dev/null; then
+				storage_device=
+			fi
+		fi
+	fi
+	if [ -z "$adb_enabled" ] && [ -z "$storage_device" ]; then
+		[ -z "$storage_requested" ] || storage_status failed
+		return 0
+	fi
 
-# 7. Boot-time breadcrumbs (repo convention, cf. rcS): fast boot is a headline
-#    feature, and these stamps are how a regression gets spotted.
-{ cut -d" " -f1 /proc/uptime > /run/boot-adb-gadget-done; } 2>/dev/null || true
-if mountpoint -q /mnt/sdcard 2>/dev/null; then
-	{ echo "$(cut -d' ' -f1 /proc/uptime) adb gadget ready" >> /mnt/sdcard/baseos-boot.log; } 2>/dev/null || true
-fi
+	# Idempotent re-entry (suspend/resume, manual re-run): a gadget that is
+	# already bound to a UDC is left completely alone.
+	if [ -d "$GADGET" ] && gadget_is_bound; then
+		start_watcher
+		return 0
+	fi
+
+	# Wait up to ~5s for a UDC to appear. None => no USB device controller on
+	# this kernel/board; a silent no-op is the correct behaviour. (We do NOT
+	# force the role — see the trap above; the UDC is present regardless.)
+	udc=
+	n=0
+	while [ "$n" -lt 20 ]; do
+		udc="$(first_udc)"
+		[ -n "$udc" ] && break
+		sleep 0.25 2>/dev/null || sleep 1
+		n=$((n + 1))
+	done
+	[ -n "$udc" ] || return 0
+
+	# configfs carries the gadget tree. Mount it if the kernel hasn't; bail if
+	# this kernel lacks CONFIGFS_F_FS (no usb_gadget dir).
+	if [ -z "$TEST_MODE" ]; then
+		if ! grep -q " $CONFIGFS configfs " /proc/mounts 2>/dev/null; then
+			mount -t configfs none "$CONFIGFS" 2>/dev/null
+		fi
+	fi
+	[ -d "$CONFIGFS/usb_gadget" ] || return 0
+
+	# Compose gadget g1. mkdir -p is safe on configfs (returns 0 on an existing
+	# node) so re-runs before a bind just re-assert the same values.
+	mkdir -p "$GADGET" 2>/dev/null || return 0
+	# Android's host-side adb matches its interface by class/subclass/protocol
+	# (ff/42/01), NOT by these ids. The same stable IDs identify the optional
+	# composite adb + storage gadget.
+	echo 0x18d1 > "$GADGET/idVendor" 2>/dev/null
+	echo 0x4e42 > "$GADGET/idProduct" 2>/dev/null
+
+	# Serial: prefer the bootloader's androidboot.serialno, then the machine-id,
+	# then a constant — it only has to be a stable non-empty string.
+	serial=
+	for w in $(cat /proc/cmdline 2>/dev/null); do
+		case "$w" in
+			androidboot.serialno=*) serial="${w#androidboot.serialno=}" ;;
+		esac
+	done
+	[ -n "$serial" ] || { [ -s /run/machine-id ] && IFS= read -r serial < /run/machine-id; }
+	[ -n "$serial" ] || serial=baseos
+
+	# Product string = the device model from /etc/baseos-release (build-rootfs
+	# bakes BASEOS_MODEL there); fall back to a constant.
+	BASEOS_MODEL=BaseOS
+	[ -r /etc/baseos-release ] && . /etc/baseos-release 2>/dev/null
+	model="${BASEOS_MODEL:-BaseOS}"
+
+	mkdir -p "$GADGET/strings/0x409" 2>/dev/null
+	echo "$serial" > "$GADGET/strings/0x409/serialnumber" 2>/dev/null
+	echo BaseOS     > "$GADGET/strings/0x409/manufacturer" 2>/dev/null
+	echo "$model"   > "$GADGET/strings/0x409/product" 2>/dev/null
+
+	mkdir -p "$GADGET/configs/c.1/strings/0x409" 2>/dev/null
+
+	if [ -n "$adb_enabled" ]; then
+		mkdir -p "$GADGET/functions/ffs.adb" 2>/dev/null
+		[ -e "$GADGET/configs/c.1/ffs.adb" ] \
+			|| ln -s "$GADGET/functions/ffs.adb" "$GADGET/configs/c.1/ffs.adb" 2>/dev/null
+
+		# FunctionFS endpoint + the daemon that services it.
+		mkdir -p "$FFS_DIR" 2>/dev/null
+		if [ -z "$TEST_MODE" ]; then
+			if ! grep -q " $FFS_DIR functionfs " /proc/mounts 2>/dev/null; then
+				mount -t functionfs adb "$FFS_DIR" 2>/dev/null
+			fi
+			# This minimal OS does not otherwise need loopback and may leave it
+			# down. adbd's internal smart socket is bound to 127.0.0.1:5037;
+			# bring lo up so that private control socket can start. The USB
+			# transport remains the only externally reachable adb transport.
+			ip link set lo up 2>/dev/null || true
+			if ! pidof adbd >/dev/null 2>&1; then
+				"$ADBD" >/dev/null 2>&1 &
+			fi
+		fi
+	fi
+
+	if [ -n "$storage_device" ]; then
+		mass="$GADGET/functions/mass_storage.usb0"
+		mkdir -p "$mass" 2>/dev/null || storage_device=
+		# Configfs creates lun.0 automatically; the fake-tree test needs the
+		# ordinary directory made explicitly.
+		[ -z "$TEST_MODE" ] || mkdir -p "$mass/lun.0"
+		if [ -n "$storage_device" ]; then
+			echo 0 > "$mass/stall" 2>/dev/null
+			echo 1 > "$mass/lun.0/removable" 2>/dev/null
+			echo 0 > "$mass/lun.0/ro" 2>/dev/null
+			if echo "$storage_device" > "$mass/lun.0/file" 2>/dev/null; then
+				if [ ! -e "$GADGET/configs/c.1/mass_storage.usb0" ]; then
+					ln -s "$mass" "$GADGET/configs/c.1/mass_storage.usb0" 2>/dev/null \
+						|| storage_device=
+				fi
+			else
+				storage_device=
+			fi
+		fi
+	fi
+	if [ -z "$adb_enabled" ] && [ -z "$storage_device" ]; then
+		[ -z "$storage_requested" ] || storage_status failed
+		return 0
+	fi
+
+	if [ -n "$storage_device" ] && [ -n "$adb_enabled" ]; then
+		configuration="adb + usb storage"
+	elif [ -n "$storage_device" ]; then
+		configuration="usb storage"
+	else
+		configuration="adb"
+	fi
+	echo "$configuration" > "$GADGET/configs/c.1/strings/0x409/configuration" 2>/dev/null
+
+	# Bind: when adb is enabled the UDC only accepts the gadget after adbd has
+	# written FunctionFS descriptors, so early writes fail with -EINVAL. Retry
+	# for up to ~10s; storage-only normally binds on the first attempt.
+	bound=
+	n=0
+	while [ "$n" -lt 40 ]; do
+		if echo "$udc" > "$GADGET/UDC" 2>/dev/null && gadget_is_bound; then
+			bound=1
+			break
+		fi
+		sleep 0.25 2>/dev/null || sleep 1
+		n=$((n + 1))
+	done
+	# Boot-time breadcrumbs (repo convention, cf. rcS) — only on the FIRST
+	# successful bind: fast boot is a headline feature and these stamps are how a
+	# regression gets spotted. A later rebind must not overwrite them.
+	if [ -n "$adb_enabled" ] && [ -n "$bound" ] && [ ! -e /run/boot-adb-gadget-done ]; then
+		{ cut -d" " -f1 /proc/uptime > /run/boot-adb-gadget-done; } 2>/dev/null || true
+		if mountpoint -q /mnt/sdcard 2>/dev/null; then
+			{ echo "$(cut -d' ' -f1 /proc/uptime) adb gadget ready" >> /mnt/sdcard/baseos-boot.log; } 2>/dev/null || true
+		fi
+	fi
+	if [ -n "$storage_requested" ]; then
+		if [ -n "$storage_device" ] && [ -n "$bound" ]; then
+			storage_status ready
+		else
+			storage_status failed
+		fi
+	fi
+	start_watcher
+}
+
+do_rebind() {
+	# Only meaningful once setup has composed the gadget.
+	[ -d "$GADGET" ] || return 0
+	# Already bound? Nothing to do — this is the overwhelmingly common uevent
+	# (any USB power/role event, most of which don't clear the binding).
+	gadget_is_bound && return 0
+	# Need a controller to bind to.
+	udc="$(first_udc)"
+	[ -n "$udc" ] || return 0
+
+	if [ -z "$TEST_MODE" ]; then
+		# adbd normally survives a disconnect (the manager clears only the UDC
+		# binding; the functionfs mount and adbd's open ep files persist). If it
+		# has died and functionfs is still mounted, respawn it so ep0 carries the
+		# descriptors again before we bind.
+		if ! pidof adbd >/dev/null 2>&1; then
+			if grep -q " $FFS_DIR functionfs " /proc/mounts 2>/dev/null; then
+				"$ADBD" >/dev/null 2>&1 &
+			fi
+		fi
+	fi
+
+	# Re-write the UDC name. With adbd alive and its ep files open the bind is
+	# instant; if we just respawned adbd, retry briefly (~3s) while it writes the
+	# descriptors. Bounded, and a timeout is a silent no-op.
+	n=0
+	while [ "$n" -lt 12 ]; do
+		if echo "$udc" > "$GADGET/UDC" 2>/dev/null && gadget_is_bound; then
+			return 0
+		fi
+		sleep 0.25 2>/dev/null || sleep 1
+		n=$((n + 1))
+	done
+	return 0
+}
+
+case "${1:-setup}" in
+	setup)  do_setup ;;
+	rebind) do_rebind ;;
+esac
 
 exit 0

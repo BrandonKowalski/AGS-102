@@ -30,6 +30,29 @@ important_splash() {
 		&& /usr/bin/baseos-splash --important "$@" 2>/dev/null
 }
 
+# rcS has unmounted the selected frontend card and handed its block device to
+# the USB gadget. Never race the host by remounting it or starting a frontend.
+# The host owns the volume until the next reboot; the static message names the
+# critical safety action without adding animation or a resident UI.
+if [ -s /run/usb-storage-device ]; then
+	log "USB storage mode — frontend intentionally stopped"
+	important_splash -1 "STARTING USB STORAGE"
+	storage_wait=0
+	while [ ! -e /run/usb-storage-ready ] \
+		&& [ ! -e /run/usb-storage-failed ] \
+		&& [ "$storage_wait" -lt 30 ]; do
+		sleep 1
+		storage_wait=$((storage_wait + 1))
+	done
+	if [ -e /run/usb-storage-ready ]; then
+		important_splash -1 "USB STORAGE: EJECT BEFORE RESTART"
+	else
+		log "USB storage gadget did not become ready"
+		important_splash -1 "USB STORAGE FAILED: POWER OFF"
+	fi
+	while :; do sleep 3600; done
+fi
+
 # The card should already be mounted by rcS; retry here covers slow cards
 # and hot re-insertion after an unmount.
 n=0

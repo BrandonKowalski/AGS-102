@@ -12,7 +12,8 @@
 | Deep sleep (real suspend-to-RAM, ~0 drain / 35 min) | ✅ |
 | WiFi unaided bring-up + stable association | ✅ (validated when the frontend's `wifi_init.sh` did the wait; the Base-OS-owned `wlan0` bring-up is not yet hardware-validated) |
 | Dropbear SSH + sftp over WiFi | ✅ (SSH + sftp-server validated on hardware via Forklift and scp) |
-| adb over USB (charge port, device role) | ⏳ configfs gadget + adbd wired; not yet hardware-validated |
+| adb over USB (charge port, device role) | ✅ root shell, checksum-matched push/pull, and automatic event-driven UDC rebind validated on RG40XXV |
+| USB mass storage | 🧪 configfs composite enumerates concurrently with adb on RG40XXV using a disposable FAT LUN; real frontend-card maintenance boot not yet hardware-validated |
 | GLES video / input / audio in NextUI | ✅ (NextUI runs; port already validated these) |
 | Bluetooth audio pairing end-to-end | ⏳ daemons run; not yet paired on base OS |
 | HDMI output | ✅ hotplug both directions on RG40XXV once `rcS` mounts `debugfs` (§2.7) |
@@ -119,6 +120,14 @@ superblock mount-counts, and `fbsplash` breadcrumbs as boot-stage forensics.
   shared port is undisturbed. (Real path is `/sys/devices/platform/soc/usbc0` via the
   `/sys/bus/platform/devices/usbc0` symlink; the earlier `/sys/devices/platform/usbc0`
   guess did not exist, which is how the bad `otg_role` write got masked at first.)
+- Configfs attribute `stat` sizes are synthetic. In particular, `test -s g1/UDC`
+  returns true even when reading the file yields an empty value after disconnect.
+  Test the contents. This was the hidden reason the first reconnect implementation
+  treated an unbound gadget as bound.
+- `/sbin/hotplug` is the wrong reconnect trigger on this kernel: the RG40XXV emits
+  an idle battery uevent about every 10.24 seconds, which would continually fork the
+  helper. The adb gadget uses one 65 KiB blocking netlink listener instead; it only
+  forks the bounded rebind action when `g1/UDC` is actually empty.
 - The repo shell is **fish**, which doesn't word-split variables — inline `ssh -o`
   options, never store them in a var.
 - The QEMU smoke test exercises generic userspace, not the vendor kernel or hardware.

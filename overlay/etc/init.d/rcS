@@ -119,10 +119,22 @@ if /bin/mountpoint -q /mnt/sdcard 2>/dev/null; then
 	echo "$(/bin/cut -d' ' -f1 /proc/uptime) rcS reached card mount" >> /mnt/sdcard/baseos-boot.log
 fi
 
+# Optional USB-storage maintenance boot. The helper only publishes a block
+# device after it has safely unmounted /mnt/sdcard; nextui-session sees the
+# /run marker and keeps the frontend stopped while the host owns the volume.
+USB_STORAGE_MODE=0
+if [ -x /usr/sbin/usb-storage-mode ] && /usr/sbin/usb-storage-mode prepare; then
+	USB_STORAGE_MODE=1
+fi
+
 # System update: apply a *.bosupd payload the user copied onto the card. Costs
 # one failed glob on an ordinary boot; when a payload is present it writes the
-# inactive rootfs slot, verifies it, flips the GPT and reboots.
-[ -x /usr/sbin/baseos-update ] && /usr/sbin/baseos-update apply
+# inactive rootfs slot, verifies it, flips the GPT and reboots. Storage mode
+# leaves every card file to the USB host; the update runs after the user sets
+# USB_STORAGE=0 and restarts.
+if [ "$USB_STORAGE_MODE" -eq 0 ]; then
+	[ -x /usr/sbin/baseos-update ] && /usr/sbin/baseos-update apply
+fi
 
 # Dev image extras (serial getty is in inittab; this starts SSH).
 [ -x /etc/init.d/dev ] && /etc/init.d/dev &

@@ -1,0 +1,42 @@
+#!/bin/sh
+# Prepare the selected frontend card for safe USB mass-storage export.
+#
+# The card must never be mounted by BaseOS while a USB host can write it. This
+# helper activates only for an exact USB_STORAGE=1 line in BaseOS.conf, resolves
+# the block device from the existing /mnt/sdcard mount, and publishes that
+# device to /run only after unmount succeeds. A failure is a normal-boot no-op.
+
+SD="${BASEOS_STORAGE_MOUNTPOINT:-/mnt/sdcard}"
+MOUNTS="${BASEOS_PROC_MOUNTS:-/proc/mounts}"
+RUN="${BASEOS_RUN_ROOT:-/run}"
+UMOUNT="${BASEOS_UMOUNT:-umount}"
+CONFIG="$SD/BaseOS.conf"
+DEVICE_FILE="$RUN/usb-storage-device"
+PENDING="$RUN/usb-storage-device.pending"
+
+[ "${1:-prepare}" = prepare ] || exit 2
+[ -f "$CONFIG" ] || exit 1
+
+# Windows editors commonly leave CRLF endings. Do not source this root-owned
+# policy file: accept only one literal key/value line and ignore everything
+# else.
+head -c 4096 "$CONFIG" | tr -d '\r' | grep -qx 'USB_STORAGE=1' || exit 1
+
+device="$(awk -v mountpoint="$SD" '$2 == mountpoint { print $1; exit }' "$MOUNTS" 2>/dev/null)"
+[ -n "$device" ] || exit 1
+if [ -n "${BASEOS_STORAGE_TEST_MODE:-}" ]; then
+	[ -e "$device" ] || exit 1
+else
+	[ -b "$device" ] || exit 1
+fi
+
+mkdir -p "$RUN" 2>/dev/null || exit 1
+printf '%s\n' "$device" > "$PENDING" 2>/dev/null || exit 1
+sync
+if "$UMOUNT" "$SD" 2>/dev/null; then
+	mv "$PENDING" "$DEVICE_FILE" 2>/dev/null || exit 1
+	exit 0
+fi
+
+rm -f "$PENDING"
+exit 1

@@ -33,3 +33,21 @@ itself. You can leave the .bosupd file here; it is only ever applied once.
 
 This card's whole capacity is available now — Base OS expanded it to fill the
 card on first boot.
+
+USB cable access
+----------------
+
+adb is available automatically over a data-capable USB-C cable.
+
+To make this frontend card appear as a writable USB drive, create BaseOS.conf
+in the root of the card with this exact line:
+
+  USB_STORAGE=1
+
+Restart the handheld. Base OS stops the frontend and unmounts the card before
+sharing it, so the computer is the only system writing to it. adb remains
+available at the same time.
+
+To return to normal, change the line to USB_STORAGE=0 (or remove it), safely
+eject the drive on the computer, then restart the handheld. Never restart or
+unplug the cable while the computer is writing to the drive.
