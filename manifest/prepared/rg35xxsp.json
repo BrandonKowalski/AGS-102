@@ -1,0 +1,145 @@
+{
+  "baseos_device": "rg35xx",
+  "boot_prefix": {
+    "sha256": "07e4d9fa0ad10620070072c2893f4f2c0eac19b3bf858915a8456c382a9679ca",
+    "size": 222298112
+  },
+  "bootlogo": {
+    "height": 480,
+    "width": 640
+  },
+  "capabilities": {
+    "bluetooth": true,
+    "wifi": true
+  },
+  "harvest": {
+    "optional_omissions": [],
+    "sha256": "4de4e873c4ebcd4c5d6df4db785f1bfdb77e436111228f6a2c98d0aec12eec7a",
+    "size": 86261760
+  },
+  "layout": {
+    "backup_gpt_present": false,
+    "backup_lba": 30228479,
+    "current_lba": 1,
+    "declared_image_sectors": 30228480,
+    "entry_count": 8,
+    "entry_size": 128,
+    "first_usable_lba": 4,
+    "image_sectors": 24545280,
+    "last_usable_lba": 30228476,
+    "packaging": "stockmod-base-trimmed",
+    "partitions": [
+      {
+        "attributes": 0,
+        "end_sector": 204799,
+        "name": "special",
+        "number": 1,
+        "sector_count": 131072,
+        "start_sector": 73728,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e45"
+      },
+      {
+        "attributes": 0,
+        "end_sector": 270335,
+        "name": "boot-resource",
+        "number": 2,
+        "sector_count": 65536,
+        "start_sector": 204800,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e46"
+      },
+      {
+        "attributes": 0,
+        "end_sector": 303103,
+        "name": "env",
+        "number": 3,
+        "sector_count": 32768,
+        "start_sector": 270336,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e47"
+      },
+      {
+        "attributes": 0,
+        "end_sector": 434175,
+        "name": "boot",
+        "number": 4,
+        "sector_count": 131072,
+        "start_sector": 303104,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e48"
+      },
+      {
+        "attributes": 0,
+        "end_sector": 15108095,
+        "name": "rootfs",
+        "number": 5,
+        "sector_count": 14673920,
+        "start_sector": 434176,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e49"
+      },
+      {
+        "attributes": 0,
+        "end_sector": 23496703,
+        "name": "appfs",
+        "number": 6,
+        "sector_count": 8388608,
+        "start_sector": 15108096,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e4a"
+      },
+      {
+        "attributes": 0,
+        "end_sector": 24545279,
+        "name": "UDISK",
+        "number": 7,
+        "sector_count": 1048576,
+        "start_sector": 23496704,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e4b"
+      }
+    ],
+    "sector_size": 512
+  },
+  "model": "RG35XX SP",
+  "model_string": "RG35xxSP",
+  "preserved_regions": [
+    {
+      "name": "special",
+      "partition": 1,
+      "sector_count": 131072,
+      "sha256": "c9441b76472d8eb3d431e95e8cb8472fe6e51ab873b163bba8f6b031ec5ba4d8",
+      "start_sector": 73728
+    },
+    {
+      "name": "boot-resource",
+      "partition": 2,
+      "sector_count": 65536,
+      "sha256": "8ac37d6714623632bd52c330aaa4db9bc465473ca865d675baa1a2488573af37",
+      "start_sector": 204800
+    },
+    {
+      "name": "env",
+      "partition": 3,
+      "sector_count": 32768,
+      "sha256": "8dd964ef0d525071626040d7cdce6c16925aaa6108d35558a0a5f032592b78a2",
+      "start_sector": 270336
+    },
+    {
+      "name": "boot",
+      "partition": 4,
+      "sector_count": 131072,
+      "sha256": "7de1d7ba4d0d2cb4e471dc92de55af1b614a275129d879360d18bac7ac82b261",
+      "start_sector": 303104
+    }
+  ],
+  "provenance": "stockmod-image",
+  "schema": 1,
+  "source": {
+    "filename": "RG35XXSP-V1.1.5-BASE-20260522-mod-v3.9.9.img",
+    "sha256": "085472eecb7c38f7ff8bd655d722f9f18a8833a065736c1e7168332df965fa8a",
+    "size": 12567183360
+  },
+  "target": "rg35xxsp"
+}

@@ -1,0 +1,145 @@
+{
+  "baseos_device": "cube",
+  "boot_prefix": {
+    "sha256": "7918b33f1af05930ead9de2f992a085ff0249275618239a621bf2a143c200dfe",
+    "size": 222298112
+  },
+  "bootlogo": {
+    "height": 720,
+    "width": 720
+  },
+  "capabilities": {
+    "bluetooth": true,
+    "wifi": true
+  },
+  "harvest": {
+    "optional_omissions": [],
+    "sha256": "d853825d0f0895b58bec37e7fad849a25b4ccf282b5f4400ba23280e623c483e",
+    "size": 86261760
+  },
+  "layout": {
+    "backup_gpt_present": false,
+    "backup_lba": 30228479,
+    "current_lba": 1,
+    "declared_image_sectors": 30228480,
+    "entry_count": 8,
+    "entry_size": 128,
+    "first_usable_lba": 4,
+    "image_sectors": 24551424,
+    "last_usable_lba": 30228476,
+    "packaging": "stockmod-base-trimmed",
+    "partitions": [
+      {
+        "attributes": 0,
+        "end_sector": 204799,
+        "name": "special",
+        "number": 1,
+        "sector_count": 131072,
+        "start_sector": 73728,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e45"
+      },
+      {
+        "attributes": 0,
+        "end_sector": 270335,
+        "name": "boot-resource",
+        "number": 2,
+        "sector_count": 65536,
+        "start_sector": 204800,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e46"
+      },
+      {
+        "attributes": 0,
+        "end_sector": 303103,
+        "name": "env",
+        "number": 3,
+        "sector_count": 32768,
+        "start_sector": 270336,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e47"
+      },
+      {
+        "attributes": 0,
+        "end_sector": 434175,
+        "name": "boot",
+        "number": 4,
+        "sector_count": 131072,
+        "start_sector": 303104,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e48"
+      },
+      {
+        "attributes": 0,
+        "end_sector": 15114239,
+        "name": "rootfs",
+        "number": 5,
+        "sector_count": 14680064,
+        "start_sector": 434176,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e49"
+      },
+      {
+        "attributes": 0,
+        "end_sector": 23502847,
+        "name": "appfs",
+        "number": 6,
+        "sector_count": 8388608,
+        "start_sector": 15114240,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e4a"
+      },
+      {
+        "attributes": 0,
+        "end_sector": 24551423,
+        "name": "UDISK",
+        "number": 7,
+        "sector_count": 1048576,
+        "start_sector": 23502848,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e4b"
+      }
+    ],
+    "sector_size": 512
+  },
+  "model": "RG CubeXX",
+  "model_string": "RGcubexx",
+  "preserved_regions": [
+    {
+      "name": "special",
+      "partition": 1,
+      "sector_count": 131072,
+      "sha256": "013f6194287d8c24c56b6dc4adcccc6ec73776c09007362b37c5a285697d3cbe",
+      "start_sector": 73728
+    },
+    {
+      "name": "boot-resource",
+      "partition": 2,
+      "sector_count": 65536,
+      "sha256": "90c081fc82be0bfd09741f48e20535d9bc36e7016bd9cb579e8241ef1424570f",
+      "start_sector": 204800
+    },
+    {
+      "name": "env",
+      "partition": 3,
+      "sector_count": 32768,
+      "sha256": "8dd964ef0d525071626040d7cdce6c16925aaa6108d35558a0a5f032592b78a2",
+      "start_sector": 270336
+    },
+    {
+      "name": "boot",
+      "partition": 4,
+      "sector_count": 131072,
+      "sha256": "77363529b9eade9fb4e5534e099c1fcf03529750063b3b8c829f82bf582b8803",
+      "start_sector": 303104
+    }
+  ],
+  "provenance": "stockmod-image",
+  "schema": 1,
+  "source": {
+    "filename": "RGCUBEXX-V1.0.7-BASE-20260525-mod-v3.9.9.img",
+    "sha256": "83e6219e5b4a37f523b3e6d0168175b3d62dacaa5053ca34f43d5e958621cb14",
+    "size": 12570329088
+  },
+  "target": "rgcubexx"
+}

@@ -9,7 +9,7 @@ import shlex
 import struct
 from pathlib import Path
 
-from prepare_stock import BASEOS_NAMES, parse_gpt, sha256_file, sha256_range
+from prepare_stock import BASEOS_NAMES, EXPECTED_NAMES, parse_gpt, sha256_file, sha256_range
 
 
 def load(path: Path, expected_target: str) -> dict:
@@ -31,6 +31,14 @@ def partition(layout: dict, number: int) -> dict:
 
 
 def verify_prepared(data: dict, directory: Path) -> None:
+    # The manifest is the trust anchor for artifacts restored from the prepared
+    # cache rather than rebuilt from firmware, so re-assert the layout contract
+    # it records. prepare-stock.sh enforced this against the real GPT; checking
+    # it again here catches a manifest that has since been edited or corrupted.
+    names = [item["name"] for item in data["layout"]["partitions"]]
+    if names != EXPECTED_NAMES[: len(names)]:
+        raise ValueError(f"manifest records an unexpected partition order: {names}")
+
     checks = (
         (directory / "boot-prefix.img", data["boot_prefix"]),
         (directory / "stock-harvest.tar", data["harvest"]),
@@ -126,14 +134,16 @@ def main() -> int:
 
     data = load(arguments.manifest, arguments.target)
     if arguments.command == "shell":
-        p2 = partition(data["layout"], 2)
-        p5 = partition(data["layout"], 5)
         mapping = {
             "SOURCE_TARGET": data["target"],
-            "SOURCE_P2_START": p2["start_sector"],
-            "SOURCE_P5_START": p5["start_sector"],
             "SOURCE_BOOT_PREFIX_SIZE": data["boot_prefix"]["size"],
         }
+        # Every preserved partition's geometry, so gates can address p1/p3/p4
+        # inside boot-prefix.img without parsing the manifest themselves.
+        for number in range(1, 6):
+            item = partition(data["layout"], number)
+            mapping[f"SOURCE_P{number}_START"] = item["start_sector"]
+            mapping[f"SOURCE_P{number}_SECTORS"] = item["sector_count"]
         for key, value in mapping.items():
             print(f"{key}={shlex.quote(str(value))}")
     elif arguments.command == "verify":

@@ -9,34 +9,47 @@ Preparation, image composition, bootlogo generation, and QEMU userspace smoke
 tests pin the host architecture (`linux/amd64` on Intel and `linux/arm64` on Apple
 Silicon) so those steps stay native.
 
-Each target requires an extracted StockMod `.img`. Multipart `.7z` downloads must be
-extracted first.
+Building does **not** need the StockMod firmware images. `./fetch-prepared.sh`
+restores the prepared per-target inputs from a published bundle (~150 MB) instead
+of ten 11.7 GB vendor images. Firmware is only needed to add a device or to move a
+target onto a new vendor release; both are covered below.
 
-## Building an image
+## Building
 
 ```sh
-./prepare-stock.sh rg40xxv /path/to/RG40XXV-...-mod-....img
+./fetch-prepared.sh
+./build-all.sh
+```
+
+That produces, for every model, the two files a release publishes:
+
+```
+work/<target>/baseos-<target>-<version>.img.zip   flash once
+work/<target>/baseos-<target>-<version>.bosupd    every update after that
+```
+
+Both scripts take an optional target list, which is what you want while iterating:
+
+```sh
+./fetch-prepared.sh rg40xxv
+./build-all.sh rg40xxv
+./flash-card.sh rg40xxv diskN
+```
+
+`build-all.sh` is the existing per-target chain — rootfs, QEMU userspace smoke
+test, image, update payload — plus packaging, and it rebuilds the shared tools
+only when `src/` has moved. Those steps remain individually runnable:
+
+```sh
 ./build-tools.sh
 ./build-rootfs.sh rg40xxv
 ./test-boot-qemu.sh rg40xxv
 ./build-image.sh rg40xxv
-./flash-card.sh rg40xxv diskN
-```
-
-The release version lives in the repo-root `VERSION` file; `build-rootfs.sh` bakes it
-and `git describe` into `/etc/baseos-release` and `/etc/os-release`. To also produce
-the update payload users copy onto their card:
-
-```sh
 ./build-update.sh rg40xxv
 ```
 
-The image is written to `work/rg40xxv/baseos-rg40xxv.img`. To prepare and build in
-one command:
-
-```sh
-./build-stockmod.sh /path/to/firmware rg40xxv
-```
+The release version lives in the repo-root `VERSION` file; `build-rootfs.sh` bakes
+it and `git describe` into `/etc/baseos-release` and `/etc/os-release`.
 
 Target IDs are:
 
@@ -58,6 +71,84 @@ splash is turned through to land upright on a panel that is mounted turned — `
 RG28XX, whose 480×640 panel is held in landscape, and `0` everywhere else. See
 [docs/04-boot-splash.md](docs/04-boot-splash.md) §2.1 before changing it: the direction
 is fixed by the vendor bootlogo, not by taste.
+
+## The prepared-artifact cache
+
+`prepare-stock.sh` derives exactly three things per target from a vendor image:
+`boot-prefix.img`, `stock-harvest.tar` and `source.json`. The cache ships the first
+two pre-made; the third is committed:
+
+```
+manifest/prepared/<target>.json   each target's source.json — the trust anchor
+manifest/prepared/bundle.sha256   hash of the published bundle
+manifest/prepared/bundle.url      where that bundle lives
+```
+
+Integrity is checked twice and both anchors are in git. `bundle.sha256` covers the
+download; the size and SHA-256 of each artifact, recorded in the committed
+`source.json`, cover the contents — and that second check is the one
+`build-rootfs.sh` and `build-image.sh` already run on every build. A bad restore
+therefore fails exactly where a bad preparation would.
+
+The cache is an optimisation, never a source of truth: `prepare-stock.sh`
+regenerates the same artifacts from the vendor image and must produce the same
+hashes. `./fetch-prepared.sh --from <bundle>` uses a local bundle instead of
+downloading, and refuses to overwrite a target you prepared locally from different
+firmware unless you pass `--force`.
+
+## Adding a device model
+
+The only workflow that still needs a vendor `.img` — once, for one person.
+
+```sh
+# add the devices.json entry first: id, model, stockmod_prefix, model_string,
+# bootlogo_width/height, panel_rotation_ccw
+./prepare-stock.sh rgsp /path/to/RGSP-...-mod-....img
+./verify-target.sh rgsp
+./cache-pack.sh
+./build-all.sh rgsp && ./validate-on-device.sh rgsp DEVICE_IP ROOT_PASSWORD
+```
+
+`cache-pack.sh` runs `verify-target.sh` over every target before packing, writes
+the bundle to `work/prepared/`, and prints the `gh release create` and `git add`
+commands to finish with. Artifact releases are tagged by date, `prepared-YYYYMMDD`.
+
+## Tracking a new vendor firmware
+
+Each target pins a specific vendor firmware through its committed `source.json`, so
+a new Anbernic release changes nothing until you choose to take it — per target.
+
+```sh
+./prepare-stock.sh rg40xxv /path/to/RG40XXV-<new>.img
+git diff manifest/prepared/rg40xxv.json    # exactly what moved
+./verify-target.sh rg40xxv
+./cache-pack.sh
+./build-all.sh rg40xxv && ./validate-on-device.sh rg40xxv DEVICE_IP ROOT_PASSWORD
+```
+
+The diff is the review: partition geometry, artifact hashes and the vendor image's
+own provenance all change visibly in one small file.
+
+`verify-target.sh` gates the assumptions a refreshed firmware could silently
+invalidate — the recorded partition layout, that p1 `special` is an empty ext4,
+that p3 `env` still boots `/dev/mmcblk0p5` and still leaves `partitions=` for
+U-Boot to synthesise from GPT names, and that the p4 kernel still exports every
+symbol the harvested modules import with matching modversions CRCs. That last one
+matters most: a refreshed kernel whose exports have moved ships modules that fail
+to `insmod`, leaving a device with a dead GPU or no Wi-Fi and no other symptom.
+`tools/kernel_abi.py` recovers the export table straight out of the vendor `Image`
+(see its module docstring for how, given there is no `vmlinux` or `Module.symvers`)
+and can also check one target's modules against another's kernel:
+
+```sh
+python3 tools/kernel_abi.py check rg34xxsp --modules-from rg40xxv
+```
+
+To prepare and build from firmware in one command, without the cache:
+
+```sh
+./build-stockmod.sh /path/to/firmware rg40xxv
+```
 
 ## Testing
 

@@ -1,0 +1,145 @@
+{
+  "baseos_device": "rg40xx",
+  "boot_prefix": {
+    "sha256": "06aeb355e0f653496933be280d681ecf705e68562247165c4f363ee827bab175",
+    "size": 222298112
+  },
+  "bootlogo": {
+    "height": 480,
+    "width": 640
+  },
+  "capabilities": {
+    "bluetooth": true,
+    "wifi": true
+  },
+  "harvest": {
+    "optional_omissions": [],
+    "sha256": "c6811ab1bf1849a9cfb4e7d7946e1dc4237df27ebb97cffbfb2f1dc78dcd613d",
+    "size": 86261760
+  },
+  "layout": {
+    "backup_gpt_present": false,
+    "backup_lba": 30228479,
+    "current_lba": 1,
+    "declared_image_sectors": 30228480,
+    "entry_count": 8,
+    "entry_size": 128,
+    "first_usable_lba": 4,
+    "image_sectors": 24545280,
+    "last_usable_lba": 30228476,
+    "packaging": "stockmod-base-trimmed",
+    "partitions": [
+      {
+        "attributes": 0,
+        "end_sector": 204799,
+        "name": "special",
+        "number": 1,
+        "sector_count": 131072,
+        "start_sector": 73728,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e45"
+      },
+      {
+        "attributes": 0,
+        "end_sector": 270335,
+        "name": "boot-resource",
+        "number": 2,
+        "sector_count": 65536,
+        "start_sector": 204800,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e46"
+      },
+      {
+        "attributes": 0,
+        "end_sector": 303103,
+        "name": "env",
+        "number": 3,
+        "sector_count": 32768,
+        "start_sector": 270336,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e47"
+      },
+      {
+        "attributes": 0,
+        "end_sector": 434175,
+        "name": "boot",
+        "number": 4,
+        "sector_count": 131072,
+        "start_sector": 303104,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e48"
+      },
+      {
+        "attributes": 0,
+        "end_sector": 15108095,
+        "name": "rootfs",
+        "number": 5,
+        "sector_count": 14673920,
+        "start_sector": 434176,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e49"
+      },
+      {
+        "attributes": 0,
+        "end_sector": 23496703,
+        "name": "appfs",
+        "number": 6,
+        "sector_count": 8388608,
+        "start_sector": 15108096,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e4a"
+      },
+      {
+        "attributes": 0,
+        "end_sector": 24545279,
+        "name": "UDISK",
+        "number": 7,
+        "sector_count": 1048576,
+        "start_sector": 23496704,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e4b"
+      }
+    ],
+    "sector_size": 512
+  },
+  "model": "RG40XX H",
+  "model_string": "RG40xxH",
+  "preserved_regions": [
+    {
+      "name": "special",
+      "partition": 1,
+      "sector_count": 131072,
+      "sha256": "b7d3a6a5ce28fcd086990ea4c44a4c698f760fe2f467fc804aa0e834a03ab451",
+      "start_sector": 73728
+    },
+    {
+      "name": "boot-resource",
+      "partition": 2,
+      "sector_count": 65536,
+      "sha256": "af6975c1f0c6079a85092de831d254463bd268a0e4fcb438dd2ac1c6f693c45c",
+      "start_sector": 204800
+    },
+    {
+      "name": "env",
+      "partition": 3,
+      "sector_count": 32768,
+      "sha256": "8dd964ef0d525071626040d7cdce6c16925aaa6108d35558a0a5f032592b78a2",
+      "start_sector": 270336
+    },
+    {
+      "name": "boot",
+      "partition": 4,
+      "sector_count": 131072,
+      "sha256": "da555b488b380bcf530939bf2899b038f778d4536ea3cdce00f0ef25a0c89c2c",
+      "start_sector": 303104
+    }
+  ],
+  "provenance": "stockmod-image",
+  "schema": 1,
+  "source": {
+    "filename": "RG40XXH-V1.1.0-BASE-20260521-mod-v3.9.9.img",
+    "sha256": "2fc2aba1c44e3dbf7a7e4bf972c7d76718f057c90940af561eb39a2cb7f58438",
+    "size": 12567183360
+  },
+  "target": "rg40xxh"
+}
