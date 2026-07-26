@@ -9,6 +9,7 @@
       "model_string": "RG28xx",
       "bootlogo_width": 480,
       "bootlogo_height": 640,
+      "panel_rotation_ccw": 90,
       "wifi": false,
       "bluetooth": false
     },
@@ -20,6 +21,7 @@
       "model_string": "RG34xx",
       "bootlogo_width": 720,
       "bootlogo_height": 480,
+      "panel_rotation_ccw": 0,
       "wifi": true,
       "bluetooth": true
     },
@@ -31,6 +33,7 @@
       "model_string": "RG34xxSP",
       "bootlogo_width": 720,
       "bootlogo_height": 480,
+      "panel_rotation_ccw": 0,
       "wifi": true,
       "bluetooth": true
     },
@@ -42,6 +45,7 @@
       "model_string": "RG35xx",
       "bootlogo_width": 640,
       "bootlogo_height": 480,
+      "panel_rotation_ccw": 0,
       "wifi": true,
       "bluetooth": true
     },
@@ -53,6 +57,7 @@
       "model_string": "RG35xxH",
       "bootlogo_width": 640,
       "bootlogo_height": 480,
+      "panel_rotation_ccw": 0,
       "wifi": true,
       "bluetooth": true
     },
@@ -64,6 +69,7 @@
       "model_string": "RG35xxPro",
       "bootlogo_width": 640,
       "bootlogo_height": 480,
+      "panel_rotation_ccw": 0,
       "wifi": true,
       "bluetooth": true
     },
@@ -75,6 +81,7 @@
       "model_string": "RG35xxSP",
       "bootlogo_width": 640,
       "bootlogo_height": 480,
+      "panel_rotation_ccw": 0,
       "wifi": true,
       "bluetooth": true
     },
@@ -86,6 +93,7 @@
       "model_string": "RG40xxH",
       "bootlogo_width": 640,
       "bootlogo_height": 480,
+      "panel_rotation_ccw": 0,
       "wifi": true,
       "bluetooth": true
     },
@@ -97,6 +105,7 @@
       "model_string": "RG40xxV",
       "bootlogo_width": 640,
       "bootlogo_height": 480,
+      "panel_rotation_ccw": 0,
       "wifi": true,
       "bluetooth": true
     },
@@ -108,6 +117,7 @@
       "model_string": "RGcubexx",
       "bootlogo_width": 720,
       "bootlogo_height": 720,
+      "panel_rotation_ccw": 0,
       "wifi": true,
       "bluetooth": true
     }

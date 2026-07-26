@@ -3,7 +3,10 @@
 # Boot0/U-Boot shows it from the boot-resource partition; build-image.sh writes
 # the result onto p2.
 # Output format matches the selected device: native dimensions, 24bpp,
-# uncompressed BMP. The artifact is written beneath work/<target>/.
+# uncompressed BMP, pre-turned for a panel that is mounted turned (the renderer
+# does that, so the BMP holds exactly the pixels the panel scans out — the same
+# convention as the vendor's own bootlogo). The artifact is written beneath
+# work/<target>/.
 set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BASE="$HERE/.."
@@ -21,13 +24,15 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
   -v "$BASE/src":/src:ro -v "$BASE/assets":/assets:ro \
   -v "$BASE/work/$TARGET":/out \
   -e WIDTH="$PROFILE_BOOTLOGO_WIDTH" -e HEIGHT="$PROFILE_BOOTLOGO_HEIGHT" \
+  -e ROTATION="$PROFILE_PANEL_ROTATION_CCW" \
   alpine:3.20 sh -euc '
   apk add -q build-base linux-headers pkgconf freetype-dev freetype-static \
     zlib-static libpng-static bzip2-static brotli-static imagemagick
   mkdir -p /usr/share/baseos && cp /assets/boot.ttf /usr/share/baseos/boot.ttf
   gcc -DFBSPLASH_TEST -O2 $(pkg-config --cflags freetype2) -o /tmp/fbtest \
     /src/fbsplash.c $(pkg-config --static --libs freetype2)
-  /tmp/fbtest 100 "" /tmp/logo.ppm "$WIDTH" "$HEIGHT"
+  /tmp/fbtest 100 "" /tmp/logo.ppm "$WIDTH" "$HEIGHT" "$ROTATION"
   convert /tmp/logo.ppm -type TrueColor -define bmp:format=bmp3 BMP3:/out/bootlogo.bmp
 '
-echo "wrote $OUT ($PROFILE_BOOTLOGO_WIDTH x $PROFILE_BOOTLOGO_HEIGHT)"
+echo "wrote $OUT ($PROFILE_BOOTLOGO_WIDTH x $PROFILE_BOOTLOGO_HEIGHT," \
+     "turned ${PROFILE_PANEL_ROTATION_CCW}° ccw)"

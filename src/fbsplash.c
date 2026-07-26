@@ -12,6 +12,11 @@
 // No options are accepted, and anything option-shaped is a hard error — see
 // reject_options(). Text is crisp anti-aliased Lexend via freetype; if the font
 // is missing it falls back to a built-in bitmap so boot never blocks.
+//
+// Panels that are mounted turned relative to how the device is held are handled
+// by present(), which rotates a finished render onto the framebuffer. Every
+// drawing routine below works in upright, as-held coordinates and knows nothing
+// about orientation.
 #include <ctype.h>
 #include <fcntl.h>
 #include <linux/fb.h>
@@ -512,6 +517,130 @@ static void render(uint8_t *fb, struct fb_var_screeninfo *vp, struct fb_fix_scre
 	}
 }
 
+// --- panel rotation --------------------------------------------------------
+//
+// The RG28XX carries its 480x640 panel turned a quarter turn and is held in
+// landscape, so an image drawn upright in framebuffer coordinates arrives on the
+// panel lying on its side. Anbernic's own bootlogo shows the convention: the
+// artwork stored in the portrait BMP is the landscape picture turned 90°
+// counter-clockwise, and the panel turns it back.
+//
+// Rather than teach every primitive about orientation, the renderer draws into
+// an off-screen buffer in *logical* coordinates — always the upright, as-held
+// geometry, so the RG28XX composes at 640x480 exactly like the RG35XX family —
+// and turns that buffer onto the framebuffer as the last step. `rot` is the
+// counter-clockwise angle of that turn, matching the vendor convention above.
+// Every other target passes 0 and takes the original path: no buffer, no copy.
+
+static int rotation_swaps_axes(int rot) { return rot == 90 || rot == 270; }
+
+// Only quarter turns are meaningful; anything else means an unrotated panel so
+// that a malformed profile can never leave a device with no splash at all.
+static int normalise_rotation(int rot) {
+	rot %= 360;
+	if (rot < 0)
+		rot += 360;
+	return rot == 90 || rot == 180 || rot == 270 ? rot : 0;
+}
+
+// Logical geometry: the physical one with its axes swapped on a quarter turn,
+// and a tightly packed stride of its own — the framebuffer's may carry padding
+// or several buffers' worth of scanout, neither of which applies off-screen.
+static void logical_geometry(const struct fb_var_screeninfo *pv,
+                             const struct fb_fix_screeninfo *pf, int rot,
+                             struct fb_var_screeninfo *lv,
+                             struct fb_fix_screeninfo *lf) {
+	*lv = *pv;
+	*lf = *pf;
+	if (rotation_swaps_axes(rot)) {
+		lv->xres = pv->yres;
+		lv->yres = pv->xres;
+	}
+	lv->xres_virtual = lv->xres;
+	lv->yres_virtual = lv->yres;
+	lf->line_length = lv->xres * (pv->bits_per_pixel / 8);
+	lf->smem_len = lf->line_length * lv->yres;
+}
+
+// Where a logical pixel lands in the framebuffer under a counter-clockwise rot.
+static void rotate_point(int rot, int lw, int lh, int lx, int ly, int *px, int *py) {
+	switch (rot) {
+		case 90:  *px = ly;              *py = lw - 1 - lx; break;
+		case 180: *px = lw - 1 - lx;     *py = lh - 1 - ly; break;
+		case 270: *px = lh - 1 - ly;     *py = lx;          break;
+		default:  *px = lx;              *py = ly;          break;
+	}
+}
+
+// Copy the logical buffer onto the framebuffer (to_fb) or seed it from the
+// framebuffer (!to_fb). Both walk logical pixels through the same mapping, so a
+// copy out after a copy in restores every byte that was not drawn over.
+static void rotate_blit(uint8_t *fb, const struct fb_var_screeninfo *pv,
+                        const struct fb_fix_screeninfo *pf, uint8_t *lbuf,
+                        const struct fb_var_screeninfo *lv,
+                        const struct fb_fix_screeninfo *lf, int rot, int to_fb) {
+	size_t bytes = pv->bits_per_pixel / 8;
+	int lw = (int)lv->xres, lh = (int)lv->yres;
+	for (int ly = 0; ly < lh; ly++) {
+		uint8_t *lrow = lbuf + (size_t)ly * lf->line_length;
+		for (int lx = 0; lx < lw; lx++) {
+			int px, py;
+			rotate_point(rot, lw, lh, lx, ly, &px, &py);
+			if (px < 0 || py < 0 || px >= (int)pv->xres || py >= (int)pv->yres)
+				continue;
+			uint8_t *p = fb + (size_t)py * pf->line_length + (size_t)px * bytes;
+			uint8_t *l = lrow + (size_t)lx * bytes;
+			if (to_fb)
+				memcpy(p, l, bytes);
+			else
+				memcpy(l, p, bytes);
+		}
+	}
+}
+
+// Draw through the rotation layer. With rot 0 the framebuffer is touched exactly
+// as it was before rotation existed.
+static void present(uint8_t *fb, struct fb_var_screeninfo *v,
+                    struct fb_fix_screeninfo *f, int rot, int prog,
+                    const char *msg, int pill) {
+	struct fb_var_screeninfo lv;
+	struct fb_fix_screeninfo lf;
+	uint8_t *canvas = fb;
+
+	if (rot) {
+		logical_geometry(v, f, rot, &lv, &lf);
+		canvas = malloc(lf.smem_len);
+		if (canvas) {
+			// The pill composites against what is already on screen — its
+			// rounded corners and antialiased edge have to blend with the boot
+			// logo underneath — so the logical buffer starts as the framebuffer
+			// turned back upright. The full-screen logo overwrites every pixel
+			// and needs no seed.
+			if (pill)
+				rotate_blit(fb, v, f, canvas, &lv, &lf, rot, 0);
+		} else {
+			// Never fail to draw: a sideways pill still names the work in
+			// progress, and no pill at all names nothing.
+			canvas = fb;
+			rot = 0;
+		}
+	}
+
+	if (pill)
+		render_pill(canvas, rot ? &lv : v, rot ? &lf : f, prog, msg);
+	else
+		render(canvas, rot ? &lv : v, rot ? &lf : f, prog, msg);
+
+	if (canvas != fb) {
+		// Turning the whole frame back writes every visible pixel, but the copy
+		// in above means the ones outside the pill are written their own values:
+		// "preserves every pixel outside the status surface" still holds by
+		// value, which is what the guarantee is about.
+		rotate_blit(fb, v, f, canvas, &lv, &lf, rot, 1);
+		free(canvas);
+	}
+}
+
 // This renderer takes no options. Reject anything option-shaped rather than
 // letting atoi() quietly turn it into progress 0: that is precisely how a
 // binary predating the pill renderer, handed the `--pill 45 MESSAGE` of the
@@ -529,6 +658,12 @@ static int reject_options(int argc, char **argv) {
 #ifdef FBSPLASH_TEST
 // Offline render harness: draw to an in-memory 640x480 BGRA buffer and write a
 // PPM so the splash can be eyeballed without a real framebuffer or device.
+//
+// W and H are the panel's own dimensions, as the device's framebuffer reports
+// them, and the rotation argument is the panel's — so the PPM is byte-for-byte
+// what a device would scan out. That is what make-bootlogo.sh needs; it also
+// means a rotated target's preview looks sideways in an image viewer and
+// upright on the hardware. Render with rotation 0 to eyeball the design itself.
 #include <arpa/inet.h>
 int main(int argc, char **argv) {
 	if (reject_options(argc, argv)) {
@@ -542,6 +677,7 @@ int main(int argc, char **argv) {
 	const char *out = argc > 3 ? argv[3] : "/out/render.ppm";
 	int W = argc > 4 ? atoi(argv[4]) : 640;
 	int H = argc > 5 ? atoi(argv[5]) : 480;
+	int rot = normalise_rotation(argc > 6 ? atoi(argv[6]) : 0);
 	W = clampi(W, 64, 4096);
 	H = clampi(H, 64, 4096);
 
@@ -557,13 +693,10 @@ int main(int argc, char **argv) {
 	f.smem_len = f.line_length * H;
 
 	uint8_t *fb = calloc(1, f.smem_len);
-	if (pill) {
+	if (pill)
 		// Give offline previews the default static logo beneath the overlay.
-		render(fb, &v, &f, 100, NULL);
-		render_pill(fb, &v, &f, prog, msg);
-	} else {
-		render(fb, &v, &f, prog, msg);
-	}
+		present(fb, &v, &f, rot, 100, NULL, 0);
+	present(fb, &v, &f, rot, prog, msg, pill);
 
 	FILE *fp = fopen(out, "wb");
 	fprintf(fp, "P6\n%d %d\n255\n", W, H);
@@ -579,6 +712,28 @@ int main(int argc, char **argv) {
 	return 0;
 }
 #else
+// The panel rotation is device identity, so it is read from the file the build
+// already generates for the target and model rather than from a second source of
+// truth or a new argument (the argument list is a contract — see
+// reject_options()). A file that is missing, unreadable or silent about rotation
+// means 0: every unrotated target, and any rootfs built before the key existed.
+static int panel_rotation(void) {
+	static const char key[] = "BASEOS_PANEL_ROTATION_CCW=";
+	FILE *fp = fopen("/etc/baseos-release", "r");
+	if (!fp)
+		return 0;
+	char line[160];
+	int rot = 0;
+	while (fgets(line, sizeof(line), fp)) {
+		if (strncmp(line, key, sizeof(key) - 1) == 0) {
+			rot = atoi(line + sizeof(key) - 1);
+			break;
+		}
+	}
+	fclose(fp);
+	return normalise_rotation(rot);
+}
+
 int main(int argc, char **argv) {
 	if (reject_options(argc, argv)) {
 		fprintf(stderr, "fbsplash: no options are accepted\n");
@@ -609,10 +764,7 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-	if (pill)
-		render_pill(fb, &v, &f, prog, msg);
-	else
-		render(fb, &v, &f, prog, msg);
+	present(fb, &v, &f, panel_rotation(), prog, msg, pill);
 	msync(fb, map_len, MS_SYNC);
 
 	// Force the panel to scan out this buffer: on Allwinner disp2 "smooth boot"

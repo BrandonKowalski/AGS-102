@@ -17,6 +17,7 @@
 | HDMI output | ✅ hotplug both directions on RG40XXV once `rcS` mounts `debugfs` (§2.7) |
 | Exact deep-sleep standby µA (long sleep) | ⏳ counter too coarse for 35 min |
 | Other StockMod H700 targets | 🧪 target-aware images generated/verified; BaseOS hardware validation pending |
+| RG28XX rotated-panel splash | ✅ on the RG28XX (2026-07-26): pre-turned bootlogo and status pill both land upright in landscape ([04](04-boot-splash.md) §2.1) — the first BaseOS hardware validation on a second model |
 | 1.0 seven-partition A/B layout | ✅ boots on RG40XXV; NextUI reports BaseOS 1.0.0 |
 | Hidden GPT attributes accepted by the boot chain | ✅ (booted with attributes set) |
 | One drive letter / no format prompts on Windows | ⏳ not yet checked on a Windows machine |
@@ -114,6 +115,11 @@ superblock mount-counts, and `fbsplash` breadcrumbs as boot-stage forensics.
   after manifest changes (it previously caught the `ld-linux` interpreter symlink
   and `bluetoothctl`'s libreadline/libtinfo gaps).
 - NextUI hook dirs (`run_hooks.sh`) only execute `*.sh` files.
+- **A panel's dimensions do not tell you which way it is mounted.** The RG28XX reports
+  480×640 and is held in landscape; every geometry-aware thing BaseOS drew was upright
+  in framebuffer coordinates and therefore sideways on the glass. The vendor's own
+  `bootlogo.bmp` is the cheapest oracle for the direction — extract it from p2 and see
+  which way its artwork is stored ([04](04-boot-splash.md) §2.1).
 
 ## 4. Remaining polish / roadmap
 

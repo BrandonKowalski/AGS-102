@@ -53,6 +53,12 @@ Target IDs are:
 | Anbernic RG40XX V | `rg40xxv` |
 | Anbernic RG CubeXX | `rgcubexx` |
 
+Each target's profile lives in `devices.json`. `panel_rotation_ccw` is the angle the
+splash is turned through to land upright on a panel that is mounted turned — `90` on the
+RG28XX, whose 480×640 panel is held in landscape, and `0` everywhere else. See
+[docs/04-boot-splash.md](docs/04-boot-splash.md) §2.1 before changing it: the direction
+is fixed by the vendor bootlogo, not by taste.
+
 ## Testing
 
 Run checks relevant to the files changed. The main test entry points are:
@@ -61,6 +67,7 @@ Run checks relevant to the files changed. The main test entry points are:
 ./test-prepare-stock.sh
 ./test-expand-storage.sh
 ./tests/test-boot-splash-policy.sh
+./tests/test-splash-rotation.sh
 ./tests/test-baseos-ntp.sh
 ./tests/test-timedatectl.sh
 ./tests/test-rtc-utc-policy.sh

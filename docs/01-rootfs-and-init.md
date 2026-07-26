@@ -175,7 +175,9 @@ them. Three shims bridge the gap:
 
 Device identity is generated from `devices.json` at build time. `/etc/baseos-release`
 separates the exact `BASEOS_TARGET`, frontend-family `BASEOS_DEVICE`, human model and
-stock-style `BASEOS_MODEL_STRING`. A stub `/mnt/vendor/bin/dmenu.bin` containing that
+stock-style `BASEOS_MODEL_STRING`. It also carries `BASEOS_PANEL_ROTATION_CCW`, which
+`fbsplash` reads because it ships as one binary for every target
+([04](04-boot-splash.md) §2.1). A stub `/mnt/vendor/bin/dmenu.bin` containing that
 model string keeps NextUI's `strings … | grep ^RG` detection working without the stock
 frontend present; it is a compatibility adapter, not a BaseOS dependency on NextUI.
 

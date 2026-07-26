@@ -19,9 +19,15 @@ REQUIRED_FIELDS = {
     "model_string",
     "bootlogo_width",
     "bootlogo_height",
+    "panel_rotation_ccw",
     "wifi",
     "bluetooth",
 }
+# Counter-clockwise angle the splash is turned through to land upright on a panel
+# that is mounted turned relative to how the device is held. Named for the
+# operation rather than the mounting so the direction cannot be read backwards:
+# the RG28XX needs 90, matching the vendor bootlogo (see docs/04-boot-splash.md).
+PANEL_ROTATIONS = (0, 90, 180, 270)
 
 
 def die(message: str) -> "None":
@@ -56,6 +62,9 @@ def load_profiles(path: Path = DEFAULT_PROFILES) -> list[dict]:
         for key in ("bootlogo_width", "bootlogo_height"):
             if not isinstance(profile[key], int) or profile[key] <= 0:
                 die(f"{target}: {key} must be a positive integer")
+        if profile["panel_rotation_ccw"] not in PANEL_ROTATIONS:
+            expected = ", ".join(str(angle) for angle in PANEL_ROTATIONS)
+            die(f"{target}: panel_rotation_ccw must be one of: {expected}")
         ids.add(target)
         prefixes.add(prefix)
     return targets
@@ -97,6 +106,7 @@ def shell_profile(profile: dict) -> None:
         "PROFILE_MODEL_STRING": profile["model_string"],
         "PROFILE_BOOTLOGO_WIDTH": profile["bootlogo_width"],
         "PROFILE_BOOTLOGO_HEIGHT": profile["bootlogo_height"],
+        "PROFILE_PANEL_ROTATION_CCW": profile["panel_rotation_ccw"],
         "PROFILE_WIFI": int(profile["wifi"]),
         "PROFILE_BLUETOOTH": int(profile["bluetooth"]),
     }

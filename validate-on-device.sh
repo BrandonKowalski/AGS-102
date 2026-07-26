@@ -12,7 +12,10 @@ PW="${3:-root}"
 eval "$(python3 "$HERE/tools/device_profile.py" shell "$TARGET")"
 
 sshpass -p "$PW" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 "root@$IP" \
-	env BASEOS_EXPECTED_TARGET="$TARGET" BASEOS_EXPECTED_WIFI="$PROFILE_WIFI" sh -s <<'REMOTE'
+	env BASEOS_EXPECTED_TARGET="$TARGET" BASEOS_EXPECTED_WIFI="$PROFILE_WIFI" \
+	    BASEOS_EXPECTED_ROTATION="$PROFILE_PANEL_ROTATION_CCW" \
+	    BASEOS_EXPECTED_PANEL_WIDTH="$PROFILE_BOOTLOGO_WIDTH" \
+	    BASEOS_EXPECTED_PANEL_HEIGHT="$PROFILE_BOOTLOGO_HEIGHT" sh -s <<'REMOTE'
 pass=0; fail=0
 ok()   { echo "PASS: $1"; pass=$((pass+1)); }
 bad()  { echo "FAIL: $1"; fail=$((fail+1)); }
@@ -49,6 +52,16 @@ echo "=== hardware ==="
 chk "GPU module loaded (mali_kbase)"   "grep -q mali_kbase /proc/modules"
 chk "GPU device node (/dev/mali0)"     "test -c /dev/mali0"
 chk "display (/dev/disp + fb0)"        "test -c /dev/disp && test -c /dev/fb0"
+# The splash and the bootlogo are both generated from the profile's panel
+# dimensions, so a device that reports something else would render pre-turned
+# artwork for a geometry it does not have. Only the width is compared: yres_virtual
+# is several buffers deep for scanout, so the height is checked as a multiple.
+chk "panel width matches the profile ($BASEOS_EXPECTED_PANEL_WIDTH)" \
+	"test \"\$(cut -d, -f1 /sys/class/graphics/fb0/virtual_size)\" -eq $BASEOS_EXPECTED_PANEL_WIDTH"
+chk "panel height is a whole number of $BASEOS_EXPECTED_PANEL_HEIGHT-row buffers" \
+	"test \"\$(( \$(cut -d, -f2 /sys/class/graphics/fb0/virtual_size) % $BASEOS_EXPECTED_PANEL_HEIGHT ))\" -eq 0"
+chk "splash knows the panel rotation ($BASEOS_EXPECTED_ROTATION ccw)" \
+	"grep -qx BASEOS_PANEL_ROTATION_CCW=$BASEOS_EXPECTED_ROTATION /etc/baseos-release"
 chk "HDMI hotplug state readable"      "test -r /sys/class/extcon/hdmi/state"
 chk "display output switch (dispdbg)"  "test -w /sys/kernel/debug/dispdbg/command"
 chk "input devices (event0-2)"         "test -c /dev/input/event0 && test -c /dev/input/event1"
