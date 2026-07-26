@@ -14,7 +14,7 @@
 | Dropbear SSH + sftp over WiFi | ✅ (SSH + sftp-server validated on hardware via Forklift and scp) |
 | GLES video / input / audio in NextUI | ✅ (NextUI runs; port already validated these) |
 | Bluetooth audio pairing end-to-end | ⏳ daemons run; not yet paired on base OS |
-| HDMI output | ⏳ not retested on base OS |
+| HDMI output | ✅ hotplug both directions on RG40XXV once `rcS` mounts `debugfs` (§2.7) |
 | Exact deep-sleep standby µA (long sleep) | ⏳ counter too coarse for 35 min |
 | Other StockMod H700 targets | 🧪 target-aware images generated/verified; BaseOS hardware validation pending |
 | 1.0 seven-partition A/B layout | ✅ boots on RG40XXV; NextUI reports BaseOS 1.0.0 |
@@ -67,6 +67,19 @@ layer, and each is now guarded:
    skew fails loudly and leaves the boot logo untouched. **Two lessons: existence is
    not freshness, and a CLI that parses with `atoi()` must reject what it doesn't
    understand.**
+7. **HDMI went to the internal panel** (issue #10). Plugging a cable in was detected
+   and the UI resized to 1280x720, but the picture stayed on the 640x480 LCD, squished;
+   unplugging left it not filling the panel. The sunxi disp2 driver's only
+   output-switch surface is `/sys/kernel/debug/dispdbg`, and **`rcS` never mounted
+   `debugfs`** — on the stock OS systemd did. So the frontend's `SetHDMI()` wrote four
+   files that did not exist, got no error it could act on, and carried on resizing the
+   framebuffer and the DE layer against an output that had not moved. → `rcS` mounts
+   `debugfs`; `validate-on-device.sh` now checks `dispdbg/command` is writable.
+   **Lesson: an inherited-from-stock kernel interface is a dependency like any harvested
+   library — the ones reached by path rather than by `ld.so` are exactly the ones the
+   closure analysis misses.** (Consuming it silently is the other half of the bug: the
+   frontend's fix was to notice, and to stop cropping the scanout layer to a
+   framebuffer page nothing renders into.)
 
 Debug technique that cracked the silent boots: **boot stock with the base-OS card in
 the TF2 slot** — that runs our GPT / ext4 / binaries against the *real* kernel without
@@ -110,7 +123,7 @@ superblock mount-counts, and `fbsplash` breadcrumbs as boot-stage forensics.
   `.bosupd`. Until then 1.0 images are offline-verified only.
 - **rootfs read-only.** The vendor initramfs mounts p5 rw; remount `ro` at the end of
   `rcS` for power-loss resilience (writable state is already tmpfs + `/data` + FAT).
-- **HDMI + BT-audio** end-to-end validation on base OS.
+- **BT-audio** end-to-end validation on base OS (HDMI is done — see §2.7).
 - **Long deep-sleep measurement** for a projected-standby-days figure.
 - **Other H700 variants.** The StockMod importer and device profiles now generate all
   ten supported images with per-target boot partitions, model identity and logos.

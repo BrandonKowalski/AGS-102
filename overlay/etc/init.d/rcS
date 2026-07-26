@@ -8,6 +8,12 @@
 grep -q ' /dev devtmpfs ' /proc/mounts || /bin/mount -t devtmpfs dev /dev
 /bin/mkdir -p /dev/pts /dev/shm
 /bin/mount -t devpts -o gid=5,mode=620 devpts /dev/pts
+# debugfs: the sunxi disp2 driver's only display-output control surface is
+# /sys/kernel/debug/dispdbg — it is what switches disp0 between the LCD and the
+# HDMI TX. The stock OS got this mount for free from systemd; without it the
+# frontend's HDMI switch silently no-ops and a plugged-in TV stays dark while
+# the 720p UI is scaled onto the internal panel (issue #10).
+/bin/mount -t debugfs -o nodev,noexec,nosuid debugfs /sys/kernel/debug
 /bin/mount -t tmpfs -o mode=1777,size=256m tmpfs /dev/shm
 /bin/mount -t tmpfs -o mode=1777,size=256m tmpfs /tmp
 /bin/mount -t tmpfs -o mode=755,size=32m tmpfs /run

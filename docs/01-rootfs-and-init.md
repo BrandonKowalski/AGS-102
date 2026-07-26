@@ -84,8 +84,12 @@ ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100   # serial console (harmless wi
 
 ## 5. `rcS` — early init (target well under 1 s)
 
-1. mount `proc`, `sysfs`, `devtmpfs`, `devpts`, tmpfs on `/dev/shm` `/tmp` `/run`
-   `/var`; hostname
+1. mount `proc`, `sysfs`, `devtmpfs`, `devpts`, `debugfs`, tmpfs on `/dev/shm` `/tmp`
+   `/run` `/var`; hostname
+1a. `debugfs` is not a debugging nicety here: `/sys/kernel/debug/dispdbg` is the sunxi
+   disp2 driver's **only** output-switch control surface, so it is what moves `disp0`
+   between the LCD and the HDMI TX. The stock OS got the mount for free from systemd;
+   without it the frontend's HDMI switch silently no-ops (see §7)
 2. leave the framebuffer untouched
 3. **`insmod mali_kbase.ko` in the background** — nothing needs the GPU until
    NextUI's `GFX_init` ~2 s later, and the insmod costs ~0.7 s; backgrounding it
@@ -161,6 +165,13 @@ them. Three shims bridge the gap:
 - **`/mnt/vendor/ctrl/setBluetooth.sh`** — a POSIX rewrite of the vendor script at the
   same path (nothing is ever mounted over `/mnt/vendor`), so `bt_init.sh` works unchanged:
   `init` → `insmod rtl_btlpm.ko` + `rtk_hciattach …`; `enable` → `hciconfig hci0 up`.
+- **`debugfs` on `/sys/kernel/debug`** (mounted in `rcS`, §5) — not a shim but the same
+  kind of stock-environment dependency. The frontend switches the display output by
+  writing `name`/`command`/`param`/`start` under `/sys/kernel/debug/dispdbg`; that is
+  the disp2 driver's only interface for it, and systemd used to provide the mount.
+  Its absence was a silent failure: the cable is still detected through
+  `/sys/class/extcon/hdmi/state` and the framebuffer is still resized to 720p, so the
+  UI ends up hardware-scaled onto the untouched internal panel (issue #10).
 
 Device identity is generated from `devices.json` at build time. `/etc/baseos-release`
 separates the exact `BASEOS_TARGET`, frontend-family `BASEOS_DEVICE`, human model and
