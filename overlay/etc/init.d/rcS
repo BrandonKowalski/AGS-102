@@ -54,7 +54,12 @@ fi
 [ -f /data/random-seed ] && /bin/cat /data/random-seed > /dev/urandom 2>/dev/null
 
 # System clock from RTC (stock delegated this to systemd; rc.local had it disabled).
-/sbin/hwclock -s 2>/dev/null &
+# -u is mandatory: the RTC holds UTC (baseos-ntp-notify writes it with -u -w), and
+# absent that flag busybox reads the RTC as local time and rewinds the clock by the
+# zone offset, so the frontend shows UTC until ntpd corrects it minutes later. The
+# usual alternative — an adjtime file declaring UTC — cannot work here: this
+# busybox looks for it at /var/lib/hwclock/adjtime, and /var is tmpfs.
+/sbin/hwclock -u -s 2>/dev/null &
 
 # WiFi: BaseOS owns the wlan0 interface so a frontend never has to wait for it
 # (removing any dependency on the frontend's wifi script being race-hardened).

@@ -63,6 +63,7 @@ Run checks relevant to the files changed. The main test entry points are:
 ./tests/test-boot-splash-policy.sh
 ./tests/test-baseos-ntp.sh
 ./tests/test-timedatectl.sh
+./tests/test-rtc-utc-policy.sh
 ./tests/test-gpt-slot.sh
 ./tests/test-update-apply.sh
 ./test-boot-qemu.sh rg40xxv
