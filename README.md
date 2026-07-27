@@ -1,9 +1,15 @@
 # BaseOS
 
-BaseOS is a minimal, stock-derived Linux for Anbernic RG XX handhelds using the
-Allwinner H700. It replaces the stock Ubuntu userland with BusyBox init while
-retaining the vendor boot chain, kernel, and hardware support—including real
-suspend-to-RAM, GLES, audio, input, Wi-Fi, Bluetooth audio, and HDMI.
+BaseOS is a minimal operating system for Anbernic RG XX handhelds.
+
+If you're tired of slow boot times, high battery consumption, or less than ideal
+support for hardware features on other custom firmwares, BaseOS is for you.
+
+It is designed as a drop-in replacement for the stock OS.
+
+However, BaseOS does not have a user interface of its own. It is designed to
+run another existing frontend. Currently it only supports NextUI which is in
+beta for Anbernic H700 devices.
 
 **[Install BaseOS](INSTALL.md)**
 
@@ -64,3 +70,15 @@ shares TF1's data partition. adb remains available.
 
 Eject the drive on the computer before restarting the handheld. Restart without
 holding MENU to return to normal.
+
+## How does it work?
+
+BaseOS is derived from the stock Anbernic OS for H700-based handhelds. The 
+kernel, drivers, DTB etc are untouched, giving you perfect hardware support.
+However, it replaces the stock Ubuntu userland with a custom BusyBox based
+rootfs. We retain all required features like WiFi, GLES, Bluetooth etc. but
+cut down everything else running in the background or increasing the boot
+duration. Some parts of the stock OS are simulated to make them faster
+yet compatible.
+
+The current version is always based on the latest stock OS release.
