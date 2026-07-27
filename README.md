@@ -9,28 +9,27 @@ suspend-to-RAM, GLES, audio, input, Wi-Fi, Bluetooth audio, and HDMI.
 
 ## ⚡ Boot duration
 
-* **≈7.14 s** — power LED to NextUI on RG40XXV.
+* **7.14 s** — power LED to NextUI on RG40XXV.
 * **2.96 s BaseOS** — measured kernel start to frontend execution, our primary
 optimization target.
 
 Stock Anbernic + NextUI baseline: **17.5 s** (manually measured with a stopwatch).
 
-Last change: **7.18 → 7.14 s** — static boot logo, ≈40 ms saved.
-
 ## What BaseOS provides
 
-- A small, fast, purpose-built operating system.
-- In-place updates: copy one file onto the card and reboot. No reflashing, and
-  your ROMs, saves and settings are untouched.
-- Fast hand-off to a frontend. NextUI is first-class today; the OS remains
-  frontend-agnostic.
+- The fastest possible boot time for Anbernic RG XX devices.
+- Lowest possible resource and battery usage.
+- Takes 5 sec to install.
+- Full support for the handheld's display, sound, controls, networking, HDMI, LEDs,
+  deep sleep and other features. No comporise on that front.
 - First-boot expansion of the data partition to fill the SD card.
-- One volume on the card when you plug it into a computer, not eight — no stray
-  "format this disk?" prompts on Windows.
-- Full support for the handheld's display, sound, controls, networking, HDMI, and
-  real suspend-to-RAM.
+- Easy updates: copy one file onto the card and reboot. No reflashing, and
+  your ROMs, saves and settings are untouched.
 - SSH/SFTP over Wi-Fi and adb over USB active by default.
-- MENU-at-power-on USB storage for TF2, or TF1's data volume when TF2 is absent.
+- USB storage mode (hold MENU when powering on).
+
+Currently BaseOS only supports NextUI as its frontend. Additional frontends
+are planned for future.
 
 ## Installation
 
