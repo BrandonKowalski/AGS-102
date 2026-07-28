@@ -1,7 +1,7 @@
 ## What you need
 
 1. An SD card of 4GB or larger size
-2. A disk image flashing tool, e.g. [Raspberry Pi Imager](https://www.raspberrypi.com/software/)
+2. A disk image flashing tool, e.g. [Raspberry Pi Imager](https://www.raspberrypi.com/software/) or my very simple [Flash Tool](https://github.com/pvaibhav/FlashTool/)
 
 ## How to install
 
