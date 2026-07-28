@@ -54,6 +54,7 @@ one-card or two-card configurations.
 - Anbernic RG40XX H
 - Anbernic RG40XX V
 - Anbernic RG CubeXX
+- Anbernic RG SP *(not yet confirmed on hardware)*
 
 Development setup, build instructions, testing, and technical documentation are in
 **[CONTRIBUTING.md](CONTRIBUTING.md)**.

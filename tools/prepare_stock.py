@@ -37,6 +37,23 @@ BASEOS_NAMES = [
     "primary",
     None,
 ]
+# Current Anbernic stock firmware ships a different table: partition 1 is a 2 GiB
+# user-visible FAT32 `Roms` volume rather than StockMod's 64 MiB empty `special`,
+# everything after it sits ~1.94 GiB higher, and there is no `primary`. StockMod
+# is itself a re-partition of stock into the table above, which is what makes the
+# same normalisation safe here — see normalise_stock_layout().
+STOCK_NAMES = [
+    "Roms",
+    "boot-resource",
+    "env",
+    "boot",
+    "rootfs",
+    "appfs",
+    "UDISK",
+    None,
+]
+# `special` in the StockMod table, and what a stock image's `Roms` is rebuilt as.
+SPECIAL_SECTORS = 131072  # 64 MiB
 SECTOR_SIZE = 512
 CHUNK_SIZE = 4 * 1024 * 1024
 
@@ -66,11 +83,12 @@ def sha256_range(path: Path, offset: int, size: int) -> str:
 def parse_gpt(image: Path, expected_names: list | None = None) -> dict:
     """Parse and validate a primary GPT.
 
-    `expected_names` is the full-disk name/order contract; it defaults to the
-    stock H700 eight-partition table. Composed BaseOS images pass BASEOS_NAMES.
+    `expected_names` is the full-disk name/order contract. Left unset it accepts
+    either recognised firmware table — StockMod's or Anbernic's stock one — and
+    reports which in the result's `source_layout`. Composed BaseOS images pass
+    BASEOS_NAMES.
     """
-    if expected_names is None:
-        expected_names = EXPECTED_NAMES
+    accepted = [expected_names] if expected_names else [EXPECTED_NAMES, STOCK_NAMES]
     image_size = image.stat().st_size
     if image_size % SECTOR_SIZE:
         raise ValueError("disk image size is not a whole number of 512-byte sectors")
@@ -138,8 +156,9 @@ def parse_gpt(image: Path, expected_names: list | None = None) -> dict:
 
         if backup_lba == image_sectors - 1:
             packaging = "full-disk"
-            if names != expected_names:
+            if names not in accepted:
                 raise ValueError(f"unexpected partition names/order: {names}")
+            source_layout = "stock" if names == STOCK_NAMES else "stockmod"
             handle.seek(backup_lba * SECTOR_SIZE)
             backup_sector = handle.read(SECTOR_SIZE)
             if len(backup_sector) != SECTOR_SIZE or backup_sector[:8] != b"EFI PART":
@@ -184,6 +203,14 @@ def parse_gpt(image: Path, expected_names: list | None = None) -> dict:
             # retain the valid primary header for the original full disk but
             # omit its empty data partition and unreachable backup GPT.
             packaging = "stockmod-base-trimmed"
+            source_layout = "stockmod"
+            if names == [*STOCK_NAMES[:7], None] and backup_lba >= image_sectors:
+                # A stock image cut short. The boot chain would survive, but the
+                # harvest comes out of p5, so there is nothing to prepare from.
+                raise ValueError(
+                    "this is a truncated stock image; preparing from stock needs the "
+                    "whole card, because the rootfs harvest is read from partition 5"
+                )
             if backup_lba < image_sectors or names != [*EXPECTED_NAMES[:7], None]:
                 raise ValueError("incomplete image is not a recognized StockMod BASE layout")
             if not partitions or partitions[-1]["number"] != 7:
@@ -196,6 +223,7 @@ def parse_gpt(image: Path, expected_names: list | None = None) -> dict:
             raise ValueError(f"GPT partitions {previous['number']} and {current['number']} overlap")
     return {
         "packaging": packaging,
+        "source_layout": source_layout,
         "backup_gpt_present": packaging == "full-disk",
         "sector_size": SECTOR_SIZE,
         "image_sectors": image_sectors,
@@ -225,6 +253,189 @@ def copy_range(source: Path, destination: Path, offset: int, size: int, sparse: 
                 output_file.write(chunk)
             remaining -= len(chunk)
         output_file.truncate(size)
+
+
+def copy_into(source: Path, source_offset: int, size: int, destination: Path, destination_offset: int) -> None:
+    """Copy a byte range from one file into an offset in another."""
+    with source.open("rb") as input_file, destination.open("r+b") as output_file:
+        input_file.seek(source_offset)
+        output_file.seek(destination_offset)
+        remaining = size
+        while remaining:
+            chunk = input_file.read(min(CHUNK_SIZE, remaining))
+            if not chunk:
+                raise ValueError(f"source image ended {remaining} bytes early")
+            output_file.write(chunk)
+            remaining -= len(chunk)
+
+
+def normalise_stock_layout(layout: dict) -> dict:
+    """Recast a stock table as the StockMod one the rest of the build consumes.
+
+    Stock's partition 1 is a 2 GiB user-visible `Roms` volume where StockMod has
+    a 64 MiB empty `special`; shrinking it to 64 MiB and pulling everything after
+    it down by the difference reproduces StockMod's table exactly, landing p2-p5
+    on the very offsets StockMod uses.
+
+    This is safe because StockMod performs the same re-partition and boots: with
+    an RG34XXSP stock and StockMod image side by side, `env` and `boot` are
+    byte-identical across the move and U-Boot itself is untouched, because it
+    resolves `partitions=` from GPT names and `root=` by partition number rather
+    than by address (docs/07 §2). BaseOS drops `Roms` rather than preserving it:
+    the composed image supplies its own user-visible `primary` volume.
+    """
+    partitions = layout["partitions"]
+    shift = partitions[0]["sector_count"] - SPECIAL_SECTORS
+    if shift <= 0:
+        raise ValueError(
+            f"stock partition 1 is {partitions[0]['sector_count']} sectors, "
+            f"expected more than the {SPECIAL_SECTORS} a `special` needs"
+        )
+
+    rebased = []
+    for partition_entry in partitions:
+        entry = dict(partition_entry)
+        if entry["number"] == 1:
+            entry["name"] = "special"
+            entry["sector_count"] = SPECIAL_SECTORS
+            entry["end_sector"] = entry["start_sector"] + SPECIAL_SECTORS - 1
+        else:
+            entry["start_sector"] -= shift
+            entry["end_sector"] -= shift
+        rebased.append(entry)
+
+    normalised = dict(layout)
+    normalised["partitions"] = rebased
+    normalised["normalised_from"] = "stock"
+    normalised["shift_sectors"] = shift
+    for key in ("image_sectors", "declared_image_sectors", "backup_lba", "last_usable_lba"):
+        normalised[key] = layout[key] - shift
+    return normalised
+
+
+def make_empty_special(destination: Path, sectors: int, target: str) -> Path:
+    """Build the empty ext4 that a stock card has no equivalent of.
+
+    Every StockMod `special` is an empty ext4 holding nothing but `lost+found`;
+    BaseOS preserves it verbatim and never mounts it. A stock card carries a
+    FAT32 `Roms` volume there instead, so one is built from scratch.
+
+    Built standalone and copied into place rather than with `mke2fs -E offset=`,
+    so `debugfs` can fix the filesystem up without needing offset-aware I/O. The
+    UUID and directory hash seed come from the target name and the superblock
+    timestamps are zeroed, so re-preparing the same firmware is reproducible --
+    an mke2fs run otherwise stamps the wall clock into the result.
+    """
+    stable = uuid.uuid5(uuid.NAMESPACE_URL, f"baseos:special:{target}")
+    # The vendor 4.9 kernel's feature set, matching build-image.sh.
+    run(
+        [
+            "mke2fs", "-q", "-F", "-t", "ext4",
+            "-O", "^metadata_csum,^metadata_csum_seed,^64bit,^orphan_file",
+            "-b", "4096", "-U", str(stable), "-E", f"hash_seed={stable}",
+            str(destination), str(sectors // 8),
+        ]
+    )
+    for field in ("mkfs_time", "mtime", "wtime", "lastcheck"):
+        run(
+            ["debugfs", "-w", "-R", f"ssv {field} 0", str(destination)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    return destination
+
+
+def write_normalised_gpt(source: Path, output: Path, normalised: dict) -> None:
+    """Rewrite the prefix's primary GPT to describe the normalised table.
+
+    Only the entries move; the header keeps the source disk's GUID and shape.
+    build-image.sh hands the result to mkgpt.py, which authors the final table.
+    """
+    with source.open("rb") as handle:
+        handle.seek(SECTOR_SIZE)
+        header = bytearray(handle.read(SECTOR_SIZE))
+        entries_lba = struct.unpack_from("<Q", header, 72)[0]
+        entry_count, entry_size = struct.unpack_from("<II", header, 80)
+        handle.seek(entries_lba * SECTOR_SIZE)
+        table = bytearray(handle.read(entry_count * entry_size))
+
+    by_number = {p["number"]: p for p in normalised["partitions"]}
+    for index in range(entry_count):
+        entry = memoryview(table)[index * entry_size : (index + 1) * entry_size]
+        partition_entry = by_number.get(index + 1)
+        if partition_entry is None:
+            continue
+        struct.pack_into(
+            "<QQ", entry, 32, partition_entry["start_sector"], partition_entry["end_sector"]
+        )
+        name = partition_entry["name"].encode("utf-16-le")
+        entry[56:128] = name.ljust(72, b"\0")
+
+    struct.pack_into("<QQ", header, 40, 4, normalised["last_usable_lba"])
+    struct.pack_into("<QQ", header, 24, 1, normalised["backup_lba"])
+    struct.pack_into("<I", header, 88, binascii.crc32(bytes(table)) & 0xFFFFFFFF)
+    struct.pack_into("<I", header, 16, 0)
+    header_size = struct.unpack_from("<I", header, 12)[0]
+    struct.pack_into(
+        "<I", header, 16, binascii.crc32(bytes(header[:header_size])) & 0xFFFFFFFF
+    )
+
+    with output.open("r+b") as handle:
+        handle.seek(SECTOR_SIZE)
+        handle.write(bytes(header))
+        handle.seek(entries_lba * SECTOR_SIZE)
+        handle.write(bytes(table))
+
+
+def build_normalised_prefix(
+    image: Path, layout: dict, normalised: dict, output: Path, target: str, temporary: Path
+) -> None:
+    """Assemble a StockMod-shaped boot prefix from a stock image."""
+    special = normalised["partitions"][0]
+    prefix_size = normalised["partitions"][4]["start_sector"] * SECTOR_SIZE
+
+    # boot0 and U-Boot, verbatim. StockMod alters only dram_para[28] here (a
+    # one-nibble DRAM trim plus its checksum), which is a StockMod tuning choice
+    # rather than something the re-partition needs -- so a stock card keeps its
+    # own, and BaseOS never invents DRAM timings.
+    copy_range(image, output, 0, special["start_sector"] * SECTOR_SIZE)
+    with output.open("r+b") as handle:
+        handle.truncate(prefix_size)
+
+    staged = make_empty_special(
+        temporary / "special.ext4", special["sector_count"], target
+    )
+    copy_into(staged, 0, special["sector_count"] * SECTOR_SIZE, output,
+              special["start_sector"] * SECTOR_SIZE)
+    staged.unlink()
+
+    # boot-resource, env and boot move down unchanged. env and boot are proven
+    # byte-identical across StockMod's own version of this move.
+    for source_entry, target_entry in zip(layout["partitions"][1:4], normalised["partitions"][1:4]):
+        copy_into(
+            image,
+            source_entry["start_sector"] * SECTOR_SIZE,
+            source_entry["sector_count"] * SECTOR_SIZE,
+            output,
+            target_entry["start_sector"] * SECTOR_SIZE,
+        )
+    write_normalised_gpt(image, output, normalised)
+
+
+def image_matches_profile(filename: str, profile: dict) -> bool:
+    """Is this firmware filename this target's?
+
+    Vendor and StockMod releases alike are named `<MODEL>-...`, which the
+    stockmod_prefix pins. `filename_alias` is an escape hatch for images that
+    arrive hand-named -- someone's own dump of a card, say -- and is expected to
+    fall out of use once an official release exists for the target. Whether an
+    image is stock or StockMod is decided by its partition table, never by name.
+    """
+    upper = filename.upper()
+    if upper.startswith(profile["stockmod_prefix"].upper()):
+        return True
+    alias = profile.get("filename_alias")
+    return bool(alias) and alias.upper() in upper
 
 
 def load_profile(path: Path, target: str) -> dict:
@@ -395,15 +606,23 @@ def main() -> int:
     if not image.is_file() or image.suffix.lower() != ".img":
         raise ValueError(f"input must be an extracted .img file: {image}")
     profile = load_profile(arguments.profiles, arguments.target)
-    if not image.name.upper().startswith(profile["stockmod_prefix"].upper()):
-        raise ValueError(
-            f"{image.name} does not match {arguments.target} "
-            f"({profile['stockmod_prefix']}*.img)"
-        )
+    if not image_matches_profile(image.name, profile):
+        expected = profile["stockmod_prefix"] + "*.img"
+        if profile.get("filename_alias"):
+            expected += f", or a filename containing {profile['filename_alias']!r}"
+        raise ValueError(f"{image.name} does not match {arguments.target} ({expected})")
 
-    layout = parse_gpt(image)
-    root_partition = layout["partitions"][4]
-    prefix_size = root_partition["start_sector"] * SECTOR_SIZE
+    # `source` describes the image on disk and is what every read is addressed
+    # through. `layout` describes the prepared prefix: for a StockMod image they
+    # are the same table, and for a stock one it is the normalised recast, since
+    # everything downstream -- mkgpt.py, build-image.sh, source_manifest.py --
+    # speaks the StockMod table and is left untouched by stock support.
+    source = parse_gpt(image)
+    from_stock = source["source_layout"] == "stock"
+    layout = normalise_stock_layout(source) if from_stock else source
+
+    source_root = source["partitions"][4]
+    prefix_size = layout["partitions"][4]["start_sector"] * SECTOR_SIZE
     source_size = image.stat().st_size
     source_hash = sha256_file(image)
 
@@ -414,12 +633,17 @@ def main() -> int:
         boot_prefix = temporary / "boot-prefix.img"
         harvest = temporary / "stock-harvest.tar"
         root_image = temporary / "stock-rootfs.ext4"
-        copy_range(image, boot_prefix, 0, prefix_size)
+        if from_stock:
+            build_normalised_prefix(
+                image, source, layout, boot_prefix, arguments.target, temporary
+            )
+        else:
+            copy_range(image, boot_prefix, 0, prefix_size)
         copy_range(
             image,
             root_image,
-            root_partition["start_sector"] * SECTOR_SIZE,
-            root_partition["sector_count"] * SECTOR_SIZE,
+            source_root["start_sector"] * SECTOR_SIZE,
+            source_root["sector_count"] * SECTOR_SIZE,
             sparse=True,
         )
         with root_image.open("rb") as handle:
@@ -450,7 +674,10 @@ def main() -> int:
 
         metadata = {
             "schema": 1,
+            # Kept verbatim so manifests prepared before stock support still
+            # load; `source_layout` is what distinguishes the two inputs.
             "provenance": "stockmod-image",
+            "source_layout": source["source_layout"],
             "target": profile["id"],
             "model": profile["model"],
             "baseos_device": profile["baseos_device"],
@@ -467,6 +694,11 @@ def main() -> int:
                 "filename": image.name,
                 "size": source_size,
                 "sha256": source_hash,
+                # The table as found on the vendor card. For a StockMod image
+                # this is `layout`; for a stock one it is what was normalised
+                # away, kept so the provenance survives the recast.
+                "partitions": source["partitions"],
+                "packaging": source["packaging"],
             },
             "layout": layout,
             "boot_prefix": {

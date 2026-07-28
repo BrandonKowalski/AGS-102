@@ -9,9 +9,9 @@ Preparation, image composition, bootlogo generation, and QEMU userspace smoke
 tests pin the host architecture (`linux/amd64` on Intel and `linux/arm64` on Apple
 Silicon) so those steps stay native.
 
-Building does **not** need the StockMod firmware images. `./fetch-prepared.sh`
-restores the prepared per-target inputs from a published bundle (~150 MB) instead
-of ten 11.7 GB vendor images. Firmware is only needed to add a device or to move a
+Building does **not** need the vendor firmware images. `./fetch-prepared.sh`
+restores the prepared per-target inputs from one published bundle instead of a
+~12 GB image per target. Firmware is only needed to add a device or to move a
 target onto a new vendor release; both are covered below.
 
 ## Building
@@ -65,6 +65,7 @@ Target IDs are:
 | Anbernic RG40XX H | `rg40xxh` |
 | Anbernic RG40XX V | `rg40xxv` |
 | Anbernic RG CubeXX | `rgcubexx` |
+| Anbernic RG SP | `rgsp` |
 
 Each target's profile lives in `devices.json`. `panel_rotation_ccw` is the angle the
 splash is turned through to land upright on a panel that is mounted turned — `90` on the
@@ -96,6 +97,36 @@ hashes. `./fetch-prepared.sh --from <bundle>` uses a local bundle instead of
 downloading, and refuses to overwrite a target you prepared locally from different
 firmware unless you pass `--force`.
 
+## Stock and StockMod firmware
+
+`prepare-stock.sh` accepts either an Anbernic **stock** image or a **StockMod**
+one, and produces the same output from both — one build path, one image format.
+Which it is comes from the partition table, never from the filename:
+
+| | partition 1 | p2–p7 |
+|---|---|---|
+| StockMod | `special`, 64 MiB empty ext4 | start at 204800 |
+| stock | `Roms`, 2 GiB user-visible FAT32 | start ~1.94 GiB higher |
+
+A stock table is recast into the StockMod one before anything else runs: `Roms`
+is dropped and rebuilt as an empty 64 MiB `special`, and everything after it
+moves down by the difference — which lands p2–p5 on exactly the StockMod
+offsets. `boot0`, U-Boot, `env` and `boot` are carried over untouched.
+
+This is safe because **StockMod performs the same re-partition and boots.** With
+an RG34XXSP stock and StockMod image side by side, `env` and `boot` are
+byte-identical across the move and U-Boot is unmodified, because it resolves
+`partitions=` from GPT names and `root=` by partition number rather than by
+address (docs/07 §2). StockMod's only other boot-chain change is one nibble of
+`dram_para[28]` plus its checksum — a DRAM trim, not something the move needs,
+so a stock-derived card keeps its own timings.
+
+`source.json` records `source_layout` (`stock` or `stockmod`), keeps the
+original vendor table under `source.partitions`, and reports the normalised
+table as `layout`. Preparing from stock needs the whole card, because the rootfs
+harvest is read from partition 5; a truncated stock image is refused with that
+reason.
+
 ## Adding a device model
 
 The only workflow that still needs a vendor `.img` — once, for one person.
@@ -103,11 +134,14 @@ The only workflow that still needs a vendor `.img` — once, for one person.
 ```sh
 # add the devices.json entry first: id, model, stockmod_prefix, model_string,
 # bootlogo_width/height, panel_rotation_ccw
-./prepare-stock.sh rgsp /path/to/RGSP-...-mod-....img
+./prepare-stock.sh rgsp /path/to/RGSP-....img
 ./verify-target.sh rgsp
 ./cache-pack.sh
 ./build-all.sh rgsp && ./validate-on-device.sh rgsp DEVICE_IP ROOT_PASSWORD
 ```
+
+Set the optional `filename_alias` only if the image arrives hand-named rather
+than as a `<MODEL>-...` vendor release; `stockmod_prefix` covers the usual case.
 
 `cache-pack.sh` runs `verify-target.sh` over every target before packing, writes
 the bundle to `work/prepared/`, and prints the `gh release create` and `git add`

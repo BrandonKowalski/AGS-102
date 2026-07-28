@@ -50,12 +50,20 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
     "$T/images/RG35XXSP-test.img" \
     "$T/images/RG40XXH-test.img" \
     "$T/images/RG40XXV-test.img" \
-    "$T/images/RGCUBEXX-test.img"
+    "$T/images/RGCUBEXX-test.img" \
+    "$T/images/RGSP-test.img"
   for target in $(python3 /src/tools/device_profile.py list); do
     python3 /src/tools/device_profile.py find "$T/images" "$target" >/dev/null
   done
   touch "$T/images/RG40XXV-second.img"
   must_fail python3 /src/tools/device_profile.py find "$T/images" rg40xxv
+
+  # filename_alias also finds a hand-named image, and still refuses two matches.
+  mkdir "$T/aliased"
+  touch "$T/aliased/2026-07-27 ANBERNIC RG SP TF1.img"
+  python3 /src/tools/device_profile.py find "$T/aliased" rgsp >/dev/null
+  touch "$T/aliased/RGSP-official.img"
+  must_fail python3 /src/tools/device_profile.py find "$T/aliased" rgsp
 
   prepare "$IMG" "$T/out1" "$T/harvest.list"
   python3 /src/tools/source_manifest.py verify "$T/out1/source.json" rg40xxv

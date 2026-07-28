@@ -1,0 +1,222 @@
+{
+  "baseos_device": "rgsp",
+  "boot_prefix": {
+    "sha256": "84ce076a1653958bfe85e86ab690e988b574174e832d90b626ecab55f4c0fc45",
+    "size": 222298112
+  },
+  "bootlogo": {
+    "height": 480,
+    "width": 720
+  },
+  "capabilities": {
+    "bluetooth": true,
+    "wifi": true
+  },
+  "harvest": {
+    "optional_omissions": [],
+    "sha256": "95d15f9af5009042a6d62e38de21e8578fe1c1db7ca3ce49f35dd52c8aead6e2",
+    "size": 86261760
+  },
+  "layout": {
+    "backup_gpt_present": true,
+    "backup_lba": 26472447,
+    "current_lba": 1,
+    "declared_image_sectors": 26472448,
+    "entry_count": 8,
+    "entry_size": 128,
+    "first_usable_lba": 4,
+    "image_sectors": 26472448,
+    "last_usable_lba": 26472444,
+    "normalised_from": "stock",
+    "packaging": "full-disk",
+    "partitions": [
+      {
+        "attributes": 35184372088832,
+        "end_sector": 204799,
+        "name": "special",
+        "number": 1,
+        "sector_count": 131072,
+        "start_sector": 73728,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e45"
+      },
+      {
+        "attributes": 13835093239654252544,
+        "end_sector": 270335,
+        "name": "boot-resource",
+        "number": 2,
+        "sector_count": 65536,
+        "start_sector": 204800,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e46"
+      },
+      {
+        "attributes": 13835093239654252544,
+        "end_sector": 303103,
+        "name": "env",
+        "number": 3,
+        "sector_count": 32768,
+        "start_sector": 270336,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e47"
+      },
+      {
+        "attributes": 13835093239654252544,
+        "end_sector": 434175,
+        "name": "boot",
+        "number": 4,
+        "sector_count": 131072,
+        "start_sector": 303104,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e48"
+      },
+      {
+        "attributes": 13835093239654252544,
+        "end_sector": 15114239,
+        "name": "rootfs",
+        "number": 5,
+        "sector_count": 14680064,
+        "start_sector": 434176,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e49"
+      },
+      {
+        "attributes": 13835093239654252544,
+        "end_sector": 23502847,
+        "name": "appfs",
+        "number": 6,
+        "sector_count": 8388608,
+        "start_sector": 15114240,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e4a"
+      },
+      {
+        "attributes": 13835058055282163712,
+        "end_sector": 26163199,
+        "name": "UDISK",
+        "number": 7,
+        "sector_count": 2660352,
+        "start_sector": 23502848,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e4b"
+      }
+    ],
+    "sector_size": 512,
+    "shift_sectors": 4063232,
+    "source_layout": "stock"
+  },
+  "model": "RG SP",
+  "model_string": "RGSP",
+  "preserved_regions": [
+    {
+      "name": "special",
+      "partition": 1,
+      "sector_count": 131072,
+      "sha256": "daa3440dd17feba264af4a1bc6b06a525f2d4daa0d703ff1132db8bbfc452b11",
+      "start_sector": 73728
+    },
+    {
+      "name": "boot-resource",
+      "partition": 2,
+      "sector_count": 65536,
+      "sha256": "261c3f21229a5ad8c5c8b2d6615c27b817f96d5280d5b5861372e470ec7bc730",
+      "start_sector": 204800
+    },
+    {
+      "name": "env",
+      "partition": 3,
+      "sector_count": 32768,
+      "sha256": "8dd964ef0d525071626040d7cdce6c16925aaa6108d35558a0a5f032592b78a2",
+      "start_sector": 270336
+    },
+    {
+      "name": "boot",
+      "partition": 4,
+      "sector_count": 131072,
+      "sha256": "d42252f30730d35ca7759a651da7260ba482144130e58f05f23ea5e33270a6f5",
+      "start_sector": 303104
+    }
+  ],
+  "provenance": "stockmod-image",
+  "schema": 1,
+  "source": {
+    "filename": "2026-07-27 ANBERNIC RG SP TF1.img",
+    "packaging": "full-disk",
+    "partitions": [
+      {
+        "attributes": 35184372088832,
+        "end_sector": 4268031,
+        "name": "Roms",
+        "number": 1,
+        "sector_count": 4194304,
+        "start_sector": 73728,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e45"
+      },
+      {
+        "attributes": 13835093239654252544,
+        "end_sector": 4333567,
+        "name": "boot-resource",
+        "number": 2,
+        "sector_count": 65536,
+        "start_sector": 4268032,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e46"
+      },
+      {
+        "attributes": 13835093239654252544,
+        "end_sector": 4366335,
+        "name": "env",
+        "number": 3,
+        "sector_count": 32768,
+        "start_sector": 4333568,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e47"
+      },
+      {
+        "attributes": 13835093239654252544,
+        "end_sector": 4497407,
+        "name": "boot",
+        "number": 4,
+        "sector_count": 131072,
+        "start_sector": 4366336,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e48"
+      },
+      {
+        "attributes": 13835093239654252544,
+        "end_sector": 19177471,
+        "name": "rootfs",
+        "number": 5,
+        "sector_count": 14680064,
+        "start_sector": 4497408,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e49"
+      },
+      {
+        "attributes": 13835093239654252544,
+        "end_sector": 27566079,
+        "name": "appfs",
+        "number": 6,
+        "sector_count": 8388608,
+        "start_sector": 19177472,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e4a"
+      },
+      {
+        "attributes": 13835058055282163712,
+        "end_sector": 30226431,
+        "name": "UDISK",
+        "number": 7,
+        "sector_count": 2660352,
+        "start_sector": 27566080,
+        "type_guid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7",
+        "unique_guid": "a0085546-4166-744a-a353-fca9272b8e4b"
+      }
+    ],
+    "sha256": "9c485f54adfcdb7935656259284a9ef8925c02cc3cf54d9714c423cfbcd9ad82",
+    "size": 15634268160
+  },
+  "source_layout": "stock",
+  "target": "rgsp"
+}

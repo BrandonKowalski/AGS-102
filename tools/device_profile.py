@@ -57,6 +57,15 @@ def load_profiles(path: Path = DEFAULT_PROFILES) -> list[dict]:
         prefix = profile["stockmod_prefix"].upper()
         if prefix in prefixes:
             die(f"duplicate StockMod prefix: {prefix}")
+        # Optional extra substring that also identifies this target's firmware,
+        # for images that arrive hand-named rather than as a vendor release.
+        alias = profile.get("filename_alias")
+        if alias is not None:
+            if not isinstance(alias, str) or not alias.strip():
+                die(f"{target}: filename_alias must be a non-empty string")
+            if alias.upper() in prefixes:
+                die(f"duplicate filename alias: {alias}")
+            prefixes.add(alias.upper())
         if not isinstance(profile["wifi"], bool) or not isinstance(profile["bluetooth"], bool):
             die(f"{target}: capability values must be booleans")
         for key in ("bootlogo_width", "bootlogo_height"):
@@ -78,16 +87,30 @@ def get_profile(target: str, path: Path = DEFAULT_PROFILES) -> dict:
     die(f"unknown target {target!r}; expected one of: {known}")
 
 
+def matches_profile(filename: str, profile: dict) -> bool:
+    """Is this firmware filename this target's?
+
+    Vendor and StockMod releases alike are named `<MODEL>-...`, which the
+    stockmod_prefix pins. `filename_alias` is an escape hatch for images that
+    arrive hand-named -- someone's own dump of a card, say -- and is expected to
+    become unnecessary once an official release exists for the target.
+    """
+    upper = filename.upper()
+    if upper.startswith(profile["stockmod_prefix"].upper()):
+        return True
+    alias = profile.get("filename_alias")
+    return bool(alias) and alias.upper() in upper
+
+
 def find_image(directory: Path, profile: dict) -> Path:
     if not directory.is_dir():
         die(f"firmware directory does not exist: {directory}")
-    prefix = profile["stockmod_prefix"].upper()
     matches = sorted(
         path.resolve()
         for path in directory.iterdir()
         if path.is_file()
         and path.suffix.lower() == ".img"
-        and path.name.upper().startswith(prefix)
+        and matches_profile(path.name, profile)
     )
     if not matches:
         die(f"{profile['id']}: no {profile['stockmod_prefix']}*.img in {directory}")

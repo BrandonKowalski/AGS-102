@@ -120,6 +120,19 @@
       "panel_rotation_ccw": 0,
       "wifi": true,
       "bluetooth": true
+    },
+    {
+      "id": "rgsp",
+      "model": "RG SP",
+      "stockmod_prefix": "RGSP-",
+      "filename_alias": "ANBERNIC RG SP",
+      "baseos_device": "rgsp",
+      "model_string": "RGSP",
+      "bootlogo_width": 720,
+      "bootlogo_height": 480,
+      "panel_rotation_ccw": 0,
+      "wifi": true,
+      "bluetooth": true
     }
   ]
 }
