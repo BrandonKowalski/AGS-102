@@ -84,10 +84,14 @@ powered down. Over the **35.5-minute** sleep the AXP2202 coulomb counter
 flat counter that fake sleep at tens of mA would have visibly drained. This runs on an
 OS we fully control, with no stock trampoline.
 
-The suspend mechanism is unchanged from the port: `.system/h700/bin/suspend` echoes
-`mem` to `/sys/power/state` directly (no systemd involvement); AXP2202 power-button
-wake, lid handling and the WiFi bounce all stay as shipped. `alsactl` (harvested)
-saves/restores the mixer across sleep.
+Base OS applies stock's Super Standby value (`16`) at boot when the SP-only
+`axp2202-battery/os_sleep` attribute exists; NextUI defensively reapplies it before
+each attempt. The SP kernel then fully stops its USB host controllers and leaves the
+hall sensor out of the wake set, so opening the lid alone does not wake deep sleep;
+POWER remains the wake source. Non-SP kernels do not expose `os_sleep` and already
+select the full USB-stop path. The frontend still enters suspend by writing `mem` to
+`/sys/power/state` directly (no systemd involvement), and `alsactl` saves/restores the
+mixer across sleep.
 
 **Measuring exact standby µA** needs a longer sleep — the coulomb counter is coarse
 (no tick over 35 min at this draw; `current_now` reads empty). `diagnostics/sleep-drain/`

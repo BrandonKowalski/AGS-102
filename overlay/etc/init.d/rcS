@@ -6,6 +6,11 @@
 
 /bin/mount -t proc -o nodev,noexec,nosuid proc /proc
 /bin/mount -t sysfs -o nodev,noexec,nosuid sys /sys
+# The SP vendor kernels expose a low-power suspend policy switch. Stock applies
+# its persisted Super Standby bit as value 16; non-SP kernels have no such file
+# and already fully stop their USB host controllers during `mem` suspend.
+os_sleep=/sys/class/power_supply/axp2202-battery/os_sleep
+[ -w "$os_sleep" ] && printf '16' > "$os_sleep"
 grep -q ' /dev devtmpfs ' /proc/mounts || /bin/mount -t devtmpfs dev /dev
 /bin/mkdir -p /dev/pts /dev/shm
 /bin/mount -t devpts -o gid=5,mode=620 devpts /dev/pts
