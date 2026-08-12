@@ -19,6 +19,25 @@
 # init has already stopped respawning by the time it runs the shutdown actions,
 # so nothing here needs to signal it.
 
+CARD=/mnt/sdcard
+LOG="$CARD/ags-shutdown.log"
+P=/sys/class/power_supply/axp2202-battery
+
+# Appends only while the card is still mounted, which is true for everything
+# above the umount at the end.
+log() {
+	if /bin/mountpoint -q "$CARD" 2>/dev/null; then
+		echo "$*" >> "$LOG" 2>/dev/null
+		/bin/sync
+	fi
+}
+
+# START is written before any teardown work, and synced. Without it, a run that
+# hangs partway through leaves no trace at all and cannot be told apart from a
+# run that never happened — which is exactly the distinction this file exists to
+# investigate.
+log "=== rcK START $(/bin/date '+%Y-%m-%d %H:%M:%S') epoch=$(/bin/date +%s) uptime=$(/bin/cut -d' ' -f1 /proc/uptime) cap=$(/bin/cat $P/capacity 2>/dev/null)% counter=$(/bin/cat $P/charge_counter 2>/dev/null) status=$(/bin/cat $P/status 2>/dev/null) usb=$(/bin/cat /sys/class/power_supply/axp2202-usb/online 2>/dev/null)"
+
 # The frontend owns /dev/mali0, the framebuffer and the codec. Give it a chance
 # to exit on its own: it has a save state to write.
 /usr/bin/killall slot 2>/dev/null
@@ -28,27 +47,24 @@ while /bin/pidof slot >/dev/null 2>&1 && [ "$n" -lt 50 ]; do
 	n=$((n + 1))
 done
 /usr/bin/killall -9 slot 2>/dev/null
+log "    frontend exited after ${n}x100ms"
 
 # mali_kbase is the suspect: it is the one clear difference between the poweroff
 # that worked and the ones that hung. The radios cost nothing to drop and rtw
 # drivers have a poor reputation on shutdown.
 for m in mali_kbase 8821cs rtl_btlpm; do
 	/sbin/rmmod "$m" 2>/dev/null
+	log "    rmmod $m -> $?"
 done
 
 # Evidence, while the card is still writable. This cannot capture the kernel's
 # own shutdown — that happens after init returns from here — but it does record
 # how far the quiesce got, and anything the kill or the rmmods complained about.
-if /bin/mountpoint -q /mnt/sdcard 2>/dev/null; then
-	P=/sys/class/power_supply/axp2202-battery
-	{
-		echo "--- rcK $(/bin/date '+%Y-%m-%d %H:%M:%S') epoch=$(/bin/date +%s) waited=${n}x100ms ---"
-		echo "gauge: cap=$(/bin/cat $P/capacity 2>/dev/null) counter=$(/bin/cat $P/charge_counter 2>/dev/null) status=$(/bin/cat $P/status 2>/dev/null) usb=$(/bin/cat /sys/class/power_supply/axp2202-usb/online 2>/dev/null)"
-		echo "modules still loaded: $(/bin/cut -d' ' -f1 /proc/modules | tr '\n' ' ')"
-		/bin/dmesg | /usr/bin/tail -40
-	} >> /mnt/sdcard/ags-shutdown.log 2>/dev/null
-	/bin/sync
+log "    modules still loaded: $(/bin/cut -d' ' -f1 /proc/modules | tr '\n' ' ')"
+if /bin/mountpoint -q "$CARD" 2>/dev/null; then
+	/bin/dmesg | /usr/bin/tail -25 >> "$LOG" 2>/dev/null
 fi
+log "=== rcK DONE $(/bin/date '+%Y-%m-%d %H:%M:%S') — handing back to init for reboot(RB_POWER_OFF)"
 
 /bin/dd if=/dev/urandom of=/data/random-seed bs=512 count=1 2>/dev/null
 /bin/sync
