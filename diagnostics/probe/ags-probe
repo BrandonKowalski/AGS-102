@@ -1,0 +1,112 @@
+#!/bin/sh
+# One-shot dump of everything AGS-102's design depends on and nobody has
+# measured. It runs on a board that has never booted this OS, so every single
+# read is allowed to fail and none of them may stop the run: a probe that
+# aborts on the first absent node tells you less than a partial one, and there
+# is no console here to find out why it stopped.
+set -eu
+
+OUT="${AGS_PROBE_OUT:-/mnt/sdcard/ags-probe.txt}"
+SYS="${AGS_SYS:-/sys}"
+PROC="${AGS_PROC:-/proc}"
+ENV_PART="${AGS_ENV_PART:-/dev/mmcblk0p3}"
+
+: > "$OUT"
+
+section() { printf '\n===== %s =====\n' "$1" >> "$OUT"; }
+
+show() {
+	if [ -r "$1" ]; then
+		cat "$1" >> "$OUT" 2>/dev/null || echo "(unreadable: $1)" >> "$OUT"
+	else
+		echo "(absent: $1)" >> "$OUT"
+	fi
+}
+
+# The kernel cmdline decides whether there is anything left for the boot-time
+# work to win here: the stock template already carries `quiet splash`, so the
+# open question is only whether a console is attached.
+section CMDLINE
+show "$PROC/cmdline"
+
+section KERNEL
+show "$PROC/version"
+
+# os_sleep is the Super Standby switch and is SP-only. Anything else this
+# vendor driver publishes beyond the standard set is a candidate for the
+# poweroff primitive, which is the whole reason to list the directory rather
+# than read a fixed list of attributes.
+section "POWER SUPPLY"
+for supply in "$SYS"/class/power_supply/*/; do
+	[ -d "$supply" ] || continue
+	echo "--- $supply" >> "$OUT"
+	for attr in "$supply"*; do
+		[ -f "$attr" ] || continue
+		printf '%s = ' "$(basename "$attr")" >> "$OUT"
+		(cat "$attr" 2>/dev/null || echo '(unreadable)') >> "$OUT"
+	done
+done
+
+# Which node the lid is on, and in what form. slot currently assumes EV_SW with
+# SW_LID and rejects any node whose sw bitmap lacks it.
+section INPUT
+for node in "$SYS"/class/input/*/; do
+	[ -d "$node" ] || continue
+	printf '%s: ' "$(basename "$node")" >> "$OUT"
+	(cat "$node/name" 2>/dev/null || echo '(no name)') >> "$OUT"
+	for cap in ev key sw abs; do
+		if [ -r "$node/device/capabilities/$cap" ]; then
+			printf '    %s = ' "$cap" >> "$OUT"
+			cat "$node/device/capabilities/$cap" >> "$OUT"
+		fi
+	done
+done
+
+# Whether the hall sensor is allowed to wake the SoC. If nothing here is
+# writable for it, the device tree is where that gets fixed.
+section WAKEUP
+for wake in "$SYS"/class/input/*/device/power/wakeup; do
+	[ -r "$wake" ] || continue
+	printf '%s = ' "$wake" >> "$OUT"
+	cat "$wake" >> "$OUT"
+done
+
+section INTERRUPTS
+if [ -r "$PROC/interrupts" ]; then
+	grep -i 'hall\|lid\|gpio' "$PROC/interrupts" >> "$OUT" 2>/dev/null \
+		|| echo '(no hall/lid/gpio interrupt)' >> "$OUT"
+else
+	echo "(absent: $PROC/interrupts)" >> "$OUT"
+fi
+
+# wakealarm is what lets the frontend arm a sleep-to-off escalation before it
+# suspends. Without it there is no way back from suspend on a timer.
+section RTC
+for rtc in "$SYS"/class/rtc/*/; do
+	[ -d "$rtc" ] || continue
+	echo "--- $rtc" >> "$OUT"
+	ls "$rtc" >> "$OUT" 2>/dev/null || echo '(unlistable)' >> "$OUT"
+done
+
+section DISPDBG
+ls "$SYS/kernel/debug/dispdbg" >> "$OUT" 2>/dev/null \
+	|| echo '(absent — debugfs not mounted, or no dispdbg)' >> "$OUT"
+
+section DMESG
+dmesg 2>/dev/null | grep -i 'pm_power_off\|power off\|poweroff\|axp\|hall' >> "$OUT" \
+	|| echo '(no matching kernel messages)' >> "$OUT"
+
+# The U-Boot environment is stored in the clear on p3 as a template, per
+# docs/00 section 1. Reading bootcmd is the entire boot-chain audit, and it
+# costs one dd.
+section "UBOOT ENV"
+if [ -r "$ENV_PART" ]; then
+	dd if="$ENV_PART" bs=1M count=16 2>/dev/null | strings 2>/dev/null \
+		| grep -E 'boot_?cmd|bootargs|bootdelay|setargs|mmc_root|partitions' >> "$OUT" \
+		|| echo '(no recognisable environment variables)' >> "$OUT"
+else
+	echo "(absent or unreadable: $ENV_PART)" >> "$OUT"
+fi
+
+sync
+echo "probe written to $OUT"
