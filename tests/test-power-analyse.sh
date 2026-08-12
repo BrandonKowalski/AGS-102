@@ -38,6 +38,14 @@ echo "$out" | grep -E 'power-cycle.*\b147\.[0-9] mA' >/dev/null \
 echo "$out" | grep -q 'SoC still running' \
 	|| { echo "no verdict for a 147 mA power-cycle gap" >&2; exit 1; }
 
+# Suspend gaps must not report power-off verdicts. The 0.1 mA suspend gap
+# should report suspension-specific language, not power-off language.
+echo "$out" | grep -E 'suspend.*\bconsistent with real suspend-to-RAM' >/dev/null \
+	|| { echo "suspend gap did not report suspension verdict" >&2; exit 1; }
+
+echo "$out" | grep -E 'suspend.*\bconsistent with a real power off' >/dev/null \
+	&& { echo "suspend gap incorrectly reported power-off verdict" >&2; exit 1; }
+
 # A counter that resets across a power cycle is a real possibility on a PMIC
 # nobody has characterised. With --nominal-uah the capacity column carries the
 # measurement instead, and without it the tool must say so rather than guess.

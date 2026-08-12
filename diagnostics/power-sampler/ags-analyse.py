@@ -71,12 +71,30 @@ def classify(before, after, seconds, gap_threshold):
     return "awake"
 
 
-def verdict(milliamps):
-    if milliamps < 5:
-        return "consistent with a real power off"
-    if milliamps < 50:
-        return "too high for a real power off — something is still powered"
-    return "consistent with the SoC still running (halt loop, rails up)"
+def verdict(kind, milliamps):
+    """What a current means depends on what the device was claiming to be doing.
+
+    A power-cycle gap is the device claiming to be off, where anything past a
+    trickle means it never was. A suspend gap is the device claiming
+    suspend-to-RAM, which has its own, much higher, honest floor. Judging both
+    against one scale reports a perfectly good suspend as a failed power off,
+    which is the exact confusion this tool exists to remove.
+
+    The suspend thresholds are this repository's own prior measurement, not new
+    numbers: diagnostics/README.md records that a single-digit-milliamp average
+    means real deep sleep and tens of milliamps means fake.
+    """
+    if kind == "power-cycle":
+        if milliamps < 5:
+            return "consistent with a real power off"
+        if milliamps < 50:
+            return "too high for a real power off — something is still powered"
+        return "consistent with the SoC still running (halt loop, rails up)"
+    if milliamps < 1:
+        return "consistent with real suspend-to-RAM"
+    if milliamps < 10:
+        return "higher than deep sleep should draw"
+    return "consistent with fake sleep (suspend-to-idle, CPUs still powered)"
 
 
 def main(argv=None):
@@ -141,7 +159,7 @@ def main(argv=None):
     for kind, seconds, current in findings:
         print(
             "  %-12s %6.1f h at %7.1f mA — %s"
-            % (kind, seconds / 3600.0, current / 1000.0, verdict(current / 1000.0))
+            % (kind, seconds / 3600.0, current / 1000.0, verdict(kind, current / 1000.0))
         )
     return 0
 
