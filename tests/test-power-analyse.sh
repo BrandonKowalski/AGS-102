@@ -59,4 +59,24 @@ out="$(python3 "$SCRIPT" "$TMP/reset.csv" --nominal-uah 3000000)"
 echo "$out" | grep -E 'power-cycle.*\b132\.[0-9] mA' >/dev/null \
 	|| { echo "capacity fallback did not report ~132.5 mA" >&2; exit 1; }
 
+# Empty charge_counter_uah: board without coulomb counter must yield absent value,
+# not zero. With no counter and no fallback, the gap is unmeasurable. With --nominal-uah,
+# the capacity column must carry the measurement.
+#   5->6  44000s gap, uptime went backwards -> power-cycle,
+#         charge_counter_uah empty on all rows; capacity 50% -> 10% = 40% drop
+#         40% of 2000000uAh = 800000uAh over 44000s = 65454uA = 65.5mA
+cat > "$TMP/empty.csv" <<'CSV'
+epoch,uptime,charge_counter_uah,capacity_pct,status
+1000,2000,,50,Discharging
+45000,100,,10,Discharging
+CSV
+
+out="$(python3 "$SCRIPT" "$TMP/empty.csv")"
+echo "$out" | grep -q 'no usable delta' \
+	|| { echo "empty counter was not reported as unusable without fallback" >&2; exit 1; }
+
+out="$(python3 "$SCRIPT" "$TMP/empty.csv" --nominal-uah 2000000)"
+echo "$out" | grep -E 'power-cycle.*\b65\.[0-9] mA' >/dev/null \
+	|| { echo "empty counter with capacity fallback did not report ~65.5 mA" >&2; exit 1; }
+
 echo "power analyse tests passed"
