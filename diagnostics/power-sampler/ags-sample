@@ -1,0 +1,42 @@
+#!/bin/sh
+# Append one reading of the gauge to the card, and sync it.
+#
+# This exists to measure periods the device cannot be watched: while suspended,
+# and while supposedly off. It cannot observe those directly, so it observes the
+# holes it leaves in its own log. Every conclusion downstream comes from what the
+# coulomb counter did across a hole, which makes the last row before the hole the
+# single most important one in the file — hence the sync on every write rather
+# than letting the page cache decide. On a device that loses power without
+# warning, an unsynced row is a row that will not be there.
+set -eu
+
+PSY="${AGS_PSY:-/sys/class/power_supply/axp2202-battery}"
+UPTIME_FILE="${AGS_UPTIME:-/proc/uptime}"
+OUT="${AGS_SAMPLE_LOG:-/mnt/sdcard/ags-power.csv}"
+INTERVAL="${AGS_SAMPLE_INTERVAL:-60}"
+
+# An attribute that is not there is an empty column, never an error. Two
+# different boards run this and only one of them has ever been characterised.
+field() {
+	if [ -r "$1" ]; then
+		tr -d ' \n' < "$1" 2>/dev/null || true
+	fi
+}
+
+emit() {
+	[ -s "$OUT" ] || echo 'epoch,uptime,charge_counter_uah,capacity_pct,status' >> "$OUT"
+	printf '%s,%s,%s,%s,%s\n' \
+		"$(date -u +%s)" \
+		"$(cut -d' ' -f1 < "$UPTIME_FILE")" \
+		"$(field "$PSY/charge_counter")" \
+		"$(field "$PSY/capacity")" \
+		"$(field "$PSY/status")" \
+		>> "$OUT"
+	sync
+}
+
+case "${1:-loop}" in
+	once) emit ;;
+	loop) while :; do emit; sleep "$INTERVAL"; done ;;
+	*) echo "usage: ags-sample [once|loop]" >&2; exit 2 ;;
+esac
