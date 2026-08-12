@@ -1,6 +1,56 @@
 #!/bin/sh
-# Shutdown: persist entropy, flush, unmount. Busybox init runs this for
+# Shutdown: quiesce the frontend and the drivers that do not survive an abrupt
+# teardown, then persist entropy, flush and unmount. Busybox init runs this for
 # both poweroff and reboot.
+#
+# The quiesce exists because reboot(RB_POWER_OFF) walks every registered
+# device's .shutdown() hook, and on this vendor kernel that hangs once the GPU
+# has been used: the screen goes dark with the rails still up, drawing hundreds
+# of milliamps, and on occasion latches so hard that only disconnecting the
+# battery recovers it. Measured on an RG SP: a poweroff with no frontend running
+# was genuinely off (gauge unmoved over 32 minutes), while the same command with
+# the frontend running drained 245 mAh in 21 minutes.
+#
+# A module that has been unloaded is not in the kernel's shutdown list at all,
+# which is why this rmmods rather than merely killing the frontend. That is the
+# one thing sysvinit and systemd do not do, and it is strictly stronger than
+# stopping services if the driver is what hangs.
+#
+# init has already stopped respawning by the time it runs the shutdown actions,
+# so nothing here needs to signal it.
+
+# The frontend owns /dev/mali0, the framebuffer and the codec. Give it a chance
+# to exit on its own: it has a save state to write.
+/usr/bin/killall slot 2>/dev/null
+n=0
+while /bin/pidof slot >/dev/null 2>&1 && [ "$n" -lt 50 ]; do
+	/bin/sleep 0.1 2>/dev/null || /bin/sleep 1
+	n=$((n + 1))
+done
+/usr/bin/killall -9 slot 2>/dev/null
+
+# mali_kbase is the suspect: it is the one clear difference between the poweroff
+# that worked and the ones that hung. The radios cost nothing to drop and rtw
+# drivers have a poor reputation on shutdown.
+for m in mali_kbase 8821cs rtl_btlpm; do
+	/sbin/rmmod "$m" 2>/dev/null
+done
+
+# Evidence, while the card is still writable. This cannot capture the kernel's
+# own shutdown — that happens after init returns from here — but it does record
+# how far the quiesce got, and anything the kill or the rmmods complained about.
+if /bin/mountpoint -q /mnt/sdcard 2>/dev/null; then
+	P=/sys/class/power_supply/axp2202-battery
+	{
+		echo "--- rcK $(/bin/date '+%Y-%m-%d %H:%M:%S') epoch=$(/bin/date +%s) waited=${n}x100ms ---"
+		echo "gauge: cap=$(/bin/cat $P/capacity 2>/dev/null) counter=$(/bin/cat $P/charge_counter 2>/dev/null) status=$(/bin/cat $P/status 2>/dev/null) usb=$(/bin/cat /sys/class/power_supply/axp2202-usb/online 2>/dev/null)"
+		echo "modules still loaded: $(/bin/cut -d' ' -f1 /proc/modules | tr '\n' ' ')"
+		/bin/dmesg | /usr/bin/tail -40
+	} >> /mnt/sdcard/ags-shutdown.log 2>/dev/null
+	/bin/sync
+fi
+
 /bin/dd if=/dev/urandom of=/data/random-seed bs=512 count=1 2>/dev/null
 /bin/sync
+echo s > /proc/sysrq-trigger 2>/dev/null
 /bin/umount -a -r 2>/dev/null
