@@ -1,33 +1,46 @@
 #!/bin/sh
-# The one way into suspend-to-RAM.
+# Suspend-to-RAM, with everything that has to be true beforehand.
 #
-# Everything that has to be true before the CPUs stop is true here, so no caller
-# has to remember any of it. A frontend that wants to sleep runs this; it does
-# not write /sys/power/state itself, and it does not need to know that this board
-# has a Super Standby bit or a power light.
+# NOTHING CALLS THIS. It is kept because it works and because the next person to read
+# /sys/power/state will see `mem` and reach for it, exactly as this project did.
 #
-# The write to /sys/power/state returns when the kernel resumes, so everything
-# after it runs on the far side of the sleep.
+# What it cannot do is end. The device has no way to wake itself:
+#
+#   * the RTC alarm at /sys/class/rtc/rtc0/wakealarm accepts a time, reads it back, and then
+#     never fires. Measured on a fully awake machine — armed for +15 s, still armed and
+#     unfired ten seconds past the deadline, with the RTC interrupt count at zero across
+#     every boot — so this is the alarm being broken, not the suspend swallowing it.
+#   * the hall sensor is registered as the power key's wake IRQ and does not wake it either.
+#   * `os_sleep` was blamed for both of those before the awake test settled it. It is not
+#     involved.
+#
+# So a frontend that calls this hands the user a device that stays asleep until they come
+# back or the battery empties: under 45 mA, about three days. That is a slow leak with a
+# better name, which is why slot powers off after its doze instead. If a later kernel or a
+# patched DTB ever makes something wake this board, this is the file to arm it in.
 set -u
 
 PSY="${AGS_PSY:-/sys/class/power_supply/axp2202-battery}"
 SYS="${AGS_SYS:-/sys}"
 LED="${AGS_LED_BIN:-/usr/sbin/ags-led}"
 
-# Dark before the rails go quiet. Nobody is looking at a closed clamshell, and
-# an LED left lit is a meaningful fraction of a sub-45 mA standby budget.
-[ -x "$LED" ] && "$LED" off
+# Dark before the rails go quiet. Nobody is looking at a closed clamshell, and an LED left
+# lit is a meaningful fraction of a sub-45 mA standby budget.
+[ -x "$LED" ] && "$LED" off || true
 
-# Super Standby. Measured on an RG SP: without it a `mem` suspend draws 141 mA,
-# with it the gauge does not move at all across 47 minutes — under 45 mA, and
-# more than three days of standby against about twenty-five hours. Write-only on
-# this PMIC: it always reads back empty, so there is no way to confirm it took
-# except by the drain it does or does not produce.
+# Super Standby. Measured on an RG SP: without it a `mem` suspend draws 141 mA, with it the
+# gauge does not move at all across 47 minutes — under 45 mA, and more than three days of
+# standby against about twenty-five hours. Write-only on this PMIC: it always reads back
+# empty, so there is no way to confirm it took except by the drain it does or does not
+# produce.
 printf 16 > "$PSY/os_sleep" 2>/dev/null
 
+# Returns when something wakes the device, which on this board means POWER and nothing else.
 echo mem > "$SYS/power/state"
 
-# Restored here rather than left to the daemon's next tick: on a clamshell that
-# has just been opened, thirty seconds of darkness reads as a device that did
-# not wake.
+# Restored here rather than left to the daemon's next tick: on a clamshell that has just been
+# opened, thirty seconds of darkness reads as a device that did not wake.
 [ -x "$LED" ] && "$LED" once
+
+# A board with no power light is not a failed suspend, and the caller reads this.
+exit 0
