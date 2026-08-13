@@ -1,0 +1,33 @@
+#!/bin/sh
+# The one way into suspend-to-RAM.
+#
+# Everything that has to be true before the CPUs stop is true here, so no caller
+# has to remember any of it. A frontend that wants to sleep runs this; it does
+# not write /sys/power/state itself, and it does not need to know that this board
+# has a Super Standby bit or a power light.
+#
+# The write to /sys/power/state returns when the kernel resumes, so everything
+# after it runs on the far side of the sleep.
+set -u
+
+PSY="${AGS_PSY:-/sys/class/power_supply/axp2202-battery}"
+SYS="${AGS_SYS:-/sys}"
+LED="${AGS_LED_BIN:-/usr/sbin/ags-led}"
+
+# Dark before the rails go quiet. Nobody is looking at a closed clamshell, and
+# an LED left lit is a meaningful fraction of a sub-45 mA standby budget.
+[ -x "$LED" ] && "$LED" off
+
+# Super Standby. Measured on an RG SP: without it a `mem` suspend draws 141 mA,
+# with it the gauge does not move at all across 47 minutes — under 45 mA, and
+# more than three days of standby against about twenty-five hours. Write-only on
+# this PMIC: it always reads back empty, so there is no way to confirm it took
+# except by the drain it does or does not produce.
+printf 16 > "$PSY/os_sleep" 2>/dev/null
+
+echo mem > "$SYS/power/state"
+
+# Restored here rather than left to the daemon's next tick: on a clamshell that
+# has just been opened, thirty seconds of darkness reads as a device that did
+# not wake.
+[ -x "$LED" ] && "$LED" once

@@ -24,6 +24,16 @@ grep -q ' /dev devtmpfs ' /proc/mounts || /bin/mount -t devtmpfs dev /dev
 /bin/mount -t tmpfs -o mode=1777,size=256m tmpfs /tmp
 /bin/mount -t tmpfs -o mode=755,size=32m tmpfs /run
 /bin/cut -d" " -f1 /proc/uptime > /run/boot-rcS-start
+
+# Power light. Green as soon as /run exists, so the handheld says it is on well
+# before any frontend starts — a device that has booted with the lid shut and
+# shows nothing is indistinguishable from one that is off, which is the fault
+# knulli-cfw/distribution#287 describes. The daemon then watches the gauge and
+# switches to red on a low battery. Backgrounded: it must never delay boot.
+if [ -x /usr/sbin/ags-led ]; then
+	/usr/sbin/ags-led once
+	/usr/sbin/ags-led loop &
+fi
 /bin/mount -t tmpfs -o mode=755,size=64m tmpfs /var
 
 # /var skeleton (tmpfs). Persistent pieces live on /data and are linked below.

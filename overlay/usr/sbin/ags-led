@@ -1,0 +1,112 @@
+#!/bin/sh
+# The power light, owned by the OS rather than by whatever frontend is running.
+#
+# It has to be right when no frontend is running at all: during boot, in charger
+# mode, in USB-storage mode, and if the frontend crashes. BaseOS already owns
+# wlan0 bring-up for the same reason ([05] §3) — the OS owns the hardware so
+# that nothing above it has to care.
+#
+# Two discrete GPIO LEDs on this board rather than one RGB: work_led is green,
+# lowpwr_led is red, both write-only attributes on the battery node. The orange
+# charge light is the AXP's own CHGLED pin, left to the charger state machine by
+# pmu_chgled_func=0, so charging is already signalled without any help from us.
+set -u
+
+PSY="${AGS_PSY:-/sys/class/power_supply/axp2202-battery}"
+STATE="${AGS_LED_STATE:-/run/ags-led.state}"
+INTERVAL="${AGS_LED_INTERVAL:-30}"
+
+# Red at or below LOW, and not back to green until CLEAR. The gauge on this
+# board is derived from whole percent, so a single threshold would strobe the
+# lights every time the reading wobbled across it.
+LOW="${AGS_LED_LOW:-15}"
+CLEAR="${AGS_LED_CLEAR:-20}"
+
+read_or() {
+	if [ -r "$1" ]; then
+		cat "$1" 2>/dev/null
+	else
+		echo "$2"
+	fi
+}
+
+green() {
+	echo 1 > "$PSY/work_led" 2>/dev/null
+	echo 0 > "$PSY/lowpwr_led" 2>/dev/null
+}
+
+red() {
+	echo 0 > "$PSY/work_led" 2>/dev/null
+	echo 1 > "$PSY/lowpwr_led" 2>/dev/null
+}
+
+dark() {
+	echo 0 > "$PSY/work_led" 2>/dev/null
+	echo 0 > "$PSY/lowpwr_led" 2>/dev/null
+}
+
+# The colour last shown. `off` deliberately does not update it, so that a resume
+# restores whatever the device was showing before it slept.
+last() { read_or "$STATE" green; }
+
+apply() {
+	case "$1" in
+	red) red ;;
+	*) green ;;
+	esac
+	echo "$1" > "$STATE" 2>/dev/null
+}
+
+# Which colour the current reading calls for, given the colour already showing.
+# That argument is what makes the hysteresis band mean anything.
+want() {
+	was="$1"
+	cap="$(read_or "$PSY/capacity" "")"
+	status="$(read_or "$PSY/status" "")"
+
+	# A charging device is never low. The orange light is already saying what is
+	# happening, and a red light beside it would be telling the owner something
+	# untrue.
+	case "$status" in
+	Charging | Full)
+		echo green
+		return
+		;;
+	esac
+
+	# No gauge, or one that will not parse, leaves the light where it is. A
+	# board without a battery node is not an occasion to start flashing red.
+	case "$cap" in
+	'' | *[!0-9]*)
+		echo "$was"
+		return
+		;;
+	esac
+
+	if [ "$was" = red ]; then
+		if [ "$cap" -ge "$CLEAR" ]; then echo green; else echo red; fi
+	else
+		if [ "$cap" -le "$LOW" ]; then echo red; else echo green; fi
+	fi
+}
+
+case "${1:-loop}" in
+off)
+	dark
+	;;
+once)
+	apply "$(want "$(last)")"
+	;;
+loop)
+	while :; do
+		shown="$(last)"
+		wanted="$(want "$shown")"
+		[ "$wanted" = "$shown" ] || apply "$wanted"
+		sleep "$INTERVAL"
+	done
+	;;
+*)
+	echo "usage: ags-led [off|once|loop]" >&2
+	exit 2
+	;;
+esac
