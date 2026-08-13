@@ -1,0 +1,85 @@
+#!/bin/sh
+# The radios, which do not come up unless they are asked for.
+#
+# Nothing in this product needs the network: the frontend is offline by design
+# and takes its clock from the RTC. Leaving WiFi out of the boot path is worth
+# about 140 ms of rcS's own work (measured on an RG SP: 1.083 s of rcS with the
+# module, 0.940 s without), and an RTL8821CS held in a low-power listen state
+# through a suspend is a well-known tens-of-milliamps drain — against a standby
+# budget under 45 mA, that is not a rounding error.
+#
+# adb is deliberately NOT gated here. It runs over USB rather than the network,
+# it is the only way onto a device with no console, and it costs nothing when no
+# cable is attached.
+set -u
+
+MODULES="${AGS_MODULES:-/lib/modules}"
+NET="${AGS_NET_SYS:-/sys/class/net}"
+DATA="${AGS_DATA:-/data}"
+
+wifi_up() {
+	[ -f "$MODULES/8821cs.ko" ] || return 0
+	/sbin/insmod "$MODULES/8821cs.ko" 2>/dev/null
+
+	# The insmod returns before the interface exists: it triggers an
+	# asynchronous SDIO probe that creates wlan0 a couple of seconds later.
+	# Waiting here is what lets a frontend assume the interface is present
+	# rather than race-harden its own scripts.
+	n=0
+	while [ ! -d "$NET/wlan0" ] && [ "$n" -lt 40 ]; do
+		sleep 0.25 2>/dev/null || sleep 1
+		n=$((n + 1))
+	done
+	[ -d "$NET/wlan0" ] || return 0
+
+	rfkill unblock wifi 2>/dev/null || true
+	ip link set wlan0 up 2>/dev/null || true
+}
+
+# BlueZ wants a machine-id and somewhere to keep its state. None of it is worth
+# doing on a boot that will never turn Bluetooth on.
+bt_prepare() {
+	/bin/mkdir -p "$DATA/bluetooth" "$DATA/bluealsa" /var/lib/bluealsa
+	/bin/ln -sfn "$DATA/bluetooth" /var/lib/bluetooth
+	if [ -s "$DATA/machine-id" ]; then
+		/bin/cp "$DATA/machine-id" /run/machine-id
+	else
+		/usr/bin/dbus-uuidgen > /run/machine-id 2>/dev/null \
+			|| /bin/tr -d - < /proc/sys/kernel/random/uuid > /run/machine-id
+		/bin/cp /run/machine-id "$DATA/machine-id" 2>/dev/null
+	fi
+	/bin/mkdir -p /run/dbus /var/lib/dbus
+	/bin/ln -sf /run/machine-id /var/lib/dbus/machine-id
+}
+
+ssh_up() {
+	[ -x /usr/sbin/dropbear ] || [ -x /usr/bin/dropbear ] || return 0
+	/bin/mkdir -p "$DATA/dropbear"
+	for t in rsa ed25519; do
+		k="$DATA/dropbear/dropbear_${t}_host_key"
+		[ -f "$k" ] || dropbearkey -t "$t" -f "$k" >/dev/null 2>&1
+	done
+	dropbear -r "$DATA/dropbear/dropbear_rsa_host_key" \
+		-r "$DATA/dropbear/dropbear_ed25519_host_key" -B 2>/dev/null
+}
+
+case "${1:-}" in
+wifi)
+	wifi_up
+	;;
+ssh)
+	wifi_up
+	ssh_up
+	;;
+bt)
+	bt_prepare
+	;;
+up)
+	wifi_up
+	ssh_up
+	;;
+*)
+	echo "usage: ags-net [wifi|ssh|bt|up]" >&2
+	exit 2
+	;;
+esac

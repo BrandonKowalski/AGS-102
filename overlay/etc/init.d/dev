@@ -2,16 +2,10 @@
 # Development conveniences (SSH, SFTP, ADB), started by rcS in the background.
 # This file is only installed in dev-flavour images (build-rootfs.sh).
 
-# Persistent dropbear host keys on /data.
-mkdir -p /data/dropbear
-for t in rsa ed25519; do
-	k=/data/dropbear/dropbear_${t}_host_key
-	[ -f "$k" ] || dropbearkey -t "$t" -f "$k" >/dev/null 2>&1
-done
-
-# SSH daemon (password: root/root — dev images only).
-dropbear -r /data/dropbear/dropbear_rsa_host_key \
-         -r /data/dropbear/dropbear_ed25519_host_key -B 2>/dev/null
+# SSH is not started here any more: it needs WiFi, and the radios are opt-in via
+# a card marker (see rcS and ags-net). adb is different - it runs over USB, it
+# is the only way onto a device with no console, and it costs nothing when no
+# cable is attached - so it stays unconditional.
 
 # adb-over-USB gadget. `setup` composes the gadget, starts adbd, does the first
 # bind, and starts one blocking uevent listener that re-binds on later replugs

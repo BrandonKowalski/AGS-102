@@ -37,7 +37,7 @@ fi
 /bin/mount -t tmpfs -o mode=755,size=64m tmpfs /var
 
 # /var skeleton (tmpfs). Persistent pieces live on /data and are linked below.
-/bin/mkdir -p /var/lib /var/log /var/tmp /var/lib/alsa /var/lib/bluealsa /var/empty
+/bin/mkdir -p /var/lib /var/log /var/tmp /var/lib/alsa /var/empty
 /bin/ln -s /run /var/run
 
 /bin/hostname -F /etc/hostname
@@ -53,8 +53,6 @@ fi
 if ! /bin/mount -t ext4 -o rw,noatime /dev/mmcblk0p6 /data 2>/dev/null; then
 	/bin/mount -t tmpfs tmpfs /data
 fi
-/bin/mkdir -p /data/bluetooth /data/bluealsa /data/dropbear
-/bin/ln -sfn /data/bluetooth /var/lib/bluetooth
 
 # A freshly updated slot is on trial until a frontend session starts. Count the
 # boots that never got that far and restore the previous slot if this one
@@ -76,36 +74,6 @@ fi
 # usual alternative — an adjtime file declaring UTC — cannot work here: this
 # busybox looks for it at /var/lib/hwclock/adjtime, and /var is tmpfs.
 /sbin/hwclock -u -s 2>/dev/null &
-
-# WiFi: BaseOS owns the wlan0 interface so a frontend never has to wait for it
-# (removing any dependency on the frontend's wifi script being race-hardened).
-# Loading the module triggers an asynchronous SDIO probe that creates wlan0 a
-# couple of seconds later; a background task waits for it and brings it up
-# (rfkill-unblock + link up). The frontend then only runs wpa_supplicant/DHCP on
-# an already-present, up interface. `ip`/`rfkill` are busybox applets on PATH.
-(
-	/sbin/insmod /lib/modules/8821cs.ko 2>/dev/null
-	wifi_wait=0
-	while [ ! -d /sys/class/net/wlan0 ] && [ "$wifi_wait" -lt 40 ]; do
-		sleep 0.25 2>/dev/null || sleep 1
-		wifi_wait=$((wifi_wait + 1))
-	done
-	if [ -d /sys/class/net/wlan0 ]; then
-		rfkill unblock wifi 2>/dev/null || true
-		ip link set wlan0 up 2>/dev/null || true
-	fi
-) &
-
-# machine-id (dbus/BlueZ). /etc/machine-id is a baked symlink into /run.
-if [ -s /data/machine-id ]; then
-	/bin/cp /data/machine-id /run/machine-id
-else
-	/usr/bin/dbus-uuidgen > /run/machine-id 2>/dev/null \
-		|| /bin/tr -d - < /proc/sys/kernel/random/uuid > /run/machine-id
-	/bin/cp /run/machine-id /data/machine-id 2>/dev/null
-fi
-/bin/mkdir -p /run/dbus /var/lib/dbus
-/bin/ln -sf /run/machine-id /var/lib/dbus/machine-id
 
 # First boot on a fresh flash: grow this card's data partition to fill the
 # whole card (leaving it empty for the user to add a frontend). No-op once the
@@ -148,6 +116,17 @@ if [ "$USB_STORAGE_MODE" -eq 0 ]; then
 	fi
 fi
 /bin/ln -sfn /mnt/sdcard /mnt/SDCARD
+
+# Radios, off unless the card asks for them. Nothing in this product needs the
+# network - the frontend is offline and takes its clock from the RTC - and
+# leaving WiFi out of the boot path is worth ~140 ms of rcS (measured on an
+# RG SP: 1.083 s with the module, 0.940 s without). Both are backgrounded so
+# neither can ever delay the hand-off. adb is not gated: it is USB rather than
+# network, and it is the only way onto a device with no console.
+if [ -x /usr/sbin/ags-net ]; then
+	[ -f /mnt/sdcard/System/network.on ] && /usr/sbin/ags-net ssh &
+	[ -f /mnt/sdcard/System/bluetooth.on ] && /usr/sbin/ags-net bt &
+fi
 
 # System update: apply a *.bosupd payload the user copied onto the card. Costs
 # one failed glob on an ordinary boot; when a payload is present it writes the
