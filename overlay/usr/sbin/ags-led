@@ -98,10 +98,13 @@ once)
 	apply "$(want "$(last)")"
 	;;
 loop)
+	# Re-asserted every tick rather than only when the colour changes. These
+	# attributes are write-only, so there is no way to read back what the light
+	# is actually doing: if the driver or anything else turns it off, a daemon
+	# that only acts on its own state changes would never notice. Two sysfs
+	# writes every thirty seconds is a cheap price for a light that heals.
 	while :; do
-		shown="$(last)"
-		wanted="$(want "$shown")"
-		[ "$wanted" = "$shown" ] || apply "$wanted"
+		apply "$(want "$(last)")"
 		sleep "$INTERVAL"
 	done
 	;;

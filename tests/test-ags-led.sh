@@ -97,6 +97,19 @@ rm -f "$PSY/capacity"
 led once
 expect "1/0" "" "absent gauge holds the last colour"
 
+# Re-assertion. The attributes are write-only, so nothing can read back what the
+# light is really doing; if the driver or anything else darkens it, the only
+# defence is to write the wanted colour again every tick regardless of whether
+# the decision changed. Simulated by darkening the lights behind the script's
+# back while its remembered colour still says green.
+gauge 80 Discharging
+led once
+expect "1/0" "" "healthy, before interference"
+printf '0\n' > "$PSY/work_led"
+printf '0\n' > "$PSY/lowpwr_led"
+led once
+expect "1/0" "" "the light is re-asserted after being darkened externally"
+
 # An unknown subcommand is a usage error rather than a silent no-op.
 if led bogus 2>/dev/null; then
 	echo "an unknown subcommand exited 0" >&2
