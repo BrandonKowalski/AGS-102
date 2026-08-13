@@ -1,0 +1,122 @@
+#!/bin/sh
+# The frontend session, respawned by busybox init.
+#
+# This runs `slot` directly. It does not go through NextUI's pak layout: there
+# is no MinUI.pak, no launch.sh on the card, and no installer flow, because
+# there is exactly one frontend and the OS knows where it lives. A card that
+# had to carry a fabricated pak directory just to be launched was a fiction
+# both sides were maintaining.
+#
+# Two locations, in order. The card wins so that `task dist:device` plus a copy
+# is still a complete development loop, with no image rebuild to try a change.
+#
+#   /mnt/sdcard/System/slot   the card
+#   /usr/bin/slot             baked into the rootfs
+SD=/mnt/sdcard
+LOG=/tmp/ags-session.log
+CARD_MISSING=0
+
+# A frontend session starting is what ends a system-update trial: the OS came
+# up far enough to hand off. Keyed here rather than on the exec because a card
+# with no frontend is a perfectly healthy OS, and keying it later would make
+# that state look like a failed update and roll back forever.
+[ -x /usr/sbin/ags-update ] && /usr/sbin/ags-update confirm 2>/dev/null
+[ -x /usr/sbin/baseos-update ] && /usr/sbin/baseos-update confirm 2>/dev/null
+
+# Log to tmpfs always, and mirror onto the card once it is mounted, so boot
+# problems leave evidence readable from any computer.
+log() {
+	line="$(date '+%H:%M:%S') $*"
+	echo "$line" >> "$LOG"
+	if mountpoint -q "$SD" 2>/dev/null; then
+		echo "$line" >> "$SD/ags-session.log" 2>/dev/null
+	fi
+}
+
+important_splash() {
+	[ -x /usr/bin/baseos-splash ] \
+		&& /usr/bin/baseos-splash --important "$@" 2>/dev/null
+}
+
+# rcS kept the selected device unmounted and handed it to the USB gadget. Never
+# race the host by mounting it or starting a frontend: the host owns the volume
+# until the next reboot.
+if [ -s /run/usb-storage-device ]; then
+	log "USB storage mode — frontend intentionally stopped"
+	important_splash -1 "STARTING USB STORAGE"
+	n=0
+	while [ ! -e /run/usb-storage-ready ] \
+		&& [ ! -e /run/usb-storage-failed ] \
+		&& [ "$n" -lt 30 ]; do
+		sleep 1
+		n=$((n + 1))
+	done
+	if [ -e /run/usb-storage-ready ]; then
+		important_splash -1 "USB STORAGE: EJECT BEFORE RESTART"
+	else
+		log "USB storage gadget did not become ready"
+		important_splash -1 "USB STORAGE FAILED: POWER OFF"
+	fi
+	while :; do sleep 3600; done
+fi
+
+# rcS should already have mounted the card; this covers a slow card and a
+# hot re-insertion after an unmount.
+n=0
+while ! mountpoint -q "$SD" 2>/dev/null; do
+	if [ "$n" -ge 15 ]; then
+		log "no card mounted after ${n}s"
+		important_splash -1 "INSERT SD CARD"
+		CARD_MISSING=1
+		break
+	fi
+	for dev in /dev/mmcblk1p1 /dev/mmcblk0p7; do
+		[ -b "$dev" ] || continue
+		mount -t vfat -o rw,utf8,noatime,shortname=mixed "$dev" "$SD" 2>/dev/null && break
+		mount -t exfat -o rw,noatime "$dev" "$SD" 2>/dev/null && break
+		mount -t auto "$dev" "$SD" 2>/dev/null && break
+	done
+	mountpoint -q "$SD" 2>/dev/null && break
+	sleep 1
+	n=$((n + 1))
+done
+
+SLOT=""
+[ -f "$SD/System/slot" ] && SLOT="$SD/System/slot"
+[ -n "$SLOT" ] || { [ -f /usr/bin/slot ] && SLOT=/usr/bin/slot; }
+
+if [ -n "$SLOT" ]; then
+	# rcS loads mali_kbase in the background; make sure /dev/mali0 exists before
+	# slot's GL setup opens it. Near-always already true by the time we get here.
+	m=0
+	while [ ! -e /dev/mali0 ] && [ "$m" -lt 30 ]; do
+		sleep 0.1 2>/dev/null || sleep 1
+		m=$((m + 1))
+	done
+
+	# The card is exFAT and mounted without an executable bit worth trusting, so
+	# the binary is handed to the loader rather than executed by path. chmod is
+	# a no-op on exFAT and a courtesy on anything else.
+	chmod +x "$SLOT" 2>/dev/null
+
+	export SLOT_ROOT="$SD"
+	cd "$SD" 2>/dev/null || cd /
+
+	cut -d" " -f1 /proc/uptime > /run/boot-frontend-exec 2>/dev/null
+	log "exec $SLOT (mali wait ${m}x)"
+
+	# There is no console on this device. Without this redirect, everything slot
+	# says about the hardware it found is written to a terminal that is not
+	# there. Truncated per boot rather than appended, so the card never grows a
+	# log without end.
+	exec "$SLOT" > "$SD/slot.log" 2>&1
+fi
+
+if [ "$CARD_MISSING" -eq 1 ]; then
+	log "no card mounted — waiting for insertion"
+else
+	log "no slot binary on the card or in the rootfs"
+	important_splash -1 "SLOT NOT FOUND"
+fi
+sleep 5
+exit 1
