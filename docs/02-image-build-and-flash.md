@@ -161,5 +161,5 @@ must not be described as hardware-validated until physically tested.
 ```
 
 The flasher refuses internal/synthesised disks and targets smaller than the selected
-image. Never flash the StockMod source card. On-device validation and development SSH
-remain useful after boot but are not preparation or build dependencies.
+image. Never flash the StockMod source card. On-device validation over adb remains
+useful after boot but is not a preparation or build dependency.

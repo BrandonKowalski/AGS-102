@@ -1,7 +1,7 @@
 #!/bin/sh
 # Assemble one target's minimal base OS rootfs from:
 #   work/<target>/stock-harvest.tar  (prepare-stock.sh)
-#   work/tools/                      (build-tools.sh: busybox, dropbearmulti)
+#   work/tools/                      (build-tools.sh: busybox, curl, adbd, ...)
 #   overlay/                (our init + config)
 # Output: work/<target>/rootfs.tar + closure report.
 # Everything that must execute aarch64 code (busybox --install, ldconfig,
@@ -20,7 +20,7 @@ TOOLS="$HERE/work/tools"
 
 [ -f "$WORK/source.json" ] || { echo "missing $WORK/source.json (run prepare-stock.sh $TARGET IMAGE)"; exit 1; }
 [ -f "$WORK/stock-harvest.tar" ] || { echo "missing $WORK/stock-harvest.tar (run prepare-stock.sh $TARGET IMAGE)"; exit 1; }
-for tool in busybox dropbearmulti curl fbsplash gptgrow gptslot sftp-server adbd; do
+for tool in busybox curl fbsplash gptgrow gptslot adbd; do
   [ -x "$TOOLS/$tool" ] || { echo "missing $TOOLS/$tool (run build-tools.sh)"; exit 1; }
 done
 BASEOS_VERSION="$(tr -d ' \n' < "$HERE/VERSION")"
@@ -137,18 +137,6 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   ln -sf /run/localtime "$R/etc/localtime"
   ln -sf /proc/self/mounts "$R/etc/mtab"
 
-  ## 6. Dropbear + SFTP (dev flavour)
-  cp /tools/dropbearmulti "$R/usr/sbin/dropbearmulti"
-  for n in dropbear dropbearkey dbclient scp; do
-    ln -sf dropbearmulti "$R/usr/sbin/$n"
-  done
-  ln -sf ../sbin/dropbearmulti "$R/usr/bin/scp"
-  # dropbear 2024.85 compiles its default SFTPSERVER_PATH as
-  # /usr/libexec/sftp-server; installing the binary there makes sftp / Forklift /
-  # scp work with zero dropbear config changes.
-  cp /tools/sftp-server "$R/usr/libexec/sftp-server"
-  chmod 755 "$R/usr/libexec/sftp-server"
-
   ## 6a. Static curl + CA roots for the NextUI RetroAchievements HTTP client.
   cp /tools/curl "$R/usr/bin/curl"
   chmod 755 "$R/usr/bin/curl"
@@ -204,7 +192,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   find "$R/usr/bin" "$R/usr/sbin" "$R/usr/libexec" -type f | while read -r f; do
     head -c4 "$f" | grep -q "^.ELF" || continue
     case "$f" in
-      */busybox|*/dropbearmulti|*/curl|*/fbsplash|*/gptgrow|*/gptslot|*/ldconfig|*/ldconfig.real|*/rtk_hciattach|*/sftp-server|*/adbd) continue ;;
+      */busybox|*/curl|*/fbsplash|*/gptgrow|*/gptslot|*/ldconfig|*/ldconfig.real|*/rtk_hciattach|*/adbd) continue ;;
     esac
     if ! chroot "$R" /usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1 --list \
         "${f#"$R"}" 2>/dev/null | grep -q "=>"; then

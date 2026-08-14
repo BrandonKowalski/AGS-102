@@ -11,6 +11,11 @@
 # adb is deliberately NOT gated here. It runs over USB rather than the network,
 # it is the only way onto a device with no console, and it costs nothing when no
 # cable is attached.
+#
+# There is no ssh here either. SSH could only ever be reached over the radio
+# this product does not bring up, so dropbear is not built or shipped at all;
+# adb over USB is the way onto a device. `wifi` therefore raises the interface
+# and starts nothing on top of it.
 set -u
 
 MODULES="${AGS_MODULES:-/lib/modules}"
@@ -52,34 +57,15 @@ bt_prepare() {
 	/bin/ln -sf /run/machine-id /var/lib/dbus/machine-id
 }
 
-ssh_up() {
-	[ -x /usr/sbin/dropbear ] || [ -x /usr/bin/dropbear ] || return 0
-	/bin/mkdir -p "$DATA/dropbear"
-	for t in rsa ed25519; do
-		k="$DATA/dropbear/dropbear_${t}_host_key"
-		[ -f "$k" ] || dropbearkey -t "$t" -f "$k" >/dev/null 2>&1
-	done
-	dropbear -r "$DATA/dropbear/dropbear_rsa_host_key" \
-		-r "$DATA/dropbear/dropbear_ed25519_host_key" -B 2>/dev/null
-}
-
 case "${1:-}" in
-wifi)
+wifi|up)
 	wifi_up
-	;;
-ssh)
-	wifi_up
-	ssh_up
 	;;
 bt)
 	bt_prepare
 	;;
-up)
-	wifi_up
-	ssh_up
-	;;
 *)
-	echo "usage: ags-net [wifi|ssh|bt|up]" >&2
+	echo "usage: ags-net [wifi|bt|up]" >&2
 	exit 2
 	;;
 esac

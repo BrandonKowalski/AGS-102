@@ -14,7 +14,7 @@ running the rootfs from the second slot (§8).
 
 1. **Updating used to mean reflashing.** A ~1 GB image write destroys the card: ROMs,
    saves, BIOS and frontend config for one-card users, and `/data` — timezone, NTP
-   preference, BlueZ pairings, SSH host keys — for everyone.
+   preference, BlueZ pairings — for everyone.
 2. **The card was noisy on desktops.** Users reported several Explorer windows and
    format prompts on Windows. The cause was verified on a live RG40XXV: **all eight
    stock partitions carry the Microsoft Basic Data type GUID with attributes `0`**,
@@ -183,7 +183,7 @@ would make that state look like a failed update and roll back forever.
 This covers a slot that boots but breaks before the session starts. It cannot cover a
 rootfs so broken that `/init` never runs — nothing BaseOS controls executes earlier —
 so that remains a reflash, exactly as today. Manual rollback is `gptslot /dev/mmcblk0
-flip` over SSH whenever the system boots at all.
+flip` over adb whenever the system boots at all.
 
 ## 5. `gptslot` — the slot arithmetic
 

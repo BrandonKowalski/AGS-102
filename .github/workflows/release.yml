@@ -71,7 +71,7 @@ jobs:
       - name: Compute the shared-tools cache key
         id: toolskey
         # tools-stamp.sh covers the in-repo sources compiled into work/tools, but
-        # not the pinned busybox/dropbear/curl versions — those live in
+        # not the pinned busybox/curl/android-tools versions — those live in
         # build-tools.sh, so both have to be in the key.
         run: echo "stamp=$(./tools/tools-stamp.sh | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 

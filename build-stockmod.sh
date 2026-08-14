@@ -35,7 +35,6 @@ done
 # ones were compiled. Existence alone is not enough: editing src/fbsplash.c and
 # rebuilding used to ship the previous binary with the new overlay scripts.
 if [ ! -x "$HERE/work/tools/busybox" ] \
-  || [ ! -x "$HERE/work/tools/dropbearmulti" ] \
   || [ ! -x "$HERE/work/tools/fbsplash" ] \
   || [ ! -x "$HERE/work/tools/gptgrow" ] \
   || [ ! -x "$HERE/work/tools/adbd" ] \

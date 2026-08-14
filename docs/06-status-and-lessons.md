@@ -11,7 +11,7 @@
 | Seamless static bootlogo → frontend hand-off | ✅ |
 | Deep sleep (real suspend-to-RAM, ~0 drain / 35 min) | ✅ |
 | WiFi unaided bring-up + stable association | ✅ (validated when the frontend's `wifi_init.sh` did the wait; the Base-OS-owned `wlan0` bring-up is not yet hardware-validated) |
-| Dropbear SSH + sftp over WiFi | ✅ (SSH + sftp-server validated on hardware via Forklift and scp) |
+| Dropbear SSH + sftp over WiFi | ➖ removed — validated on hardware via Forklift and scp before the radios became opt-in, then dropped: SSH could only be reached over a network this product does not bring up. adb over USB replaced it. |
 | adb over USB (charge port, device role) | ✅ root shell and checksum-matched push/pull validated on RG40XXV with the cable connected before power-on; reconnect requires a cable-connected restart |
 | USB mass storage | ✅ MENU-held maintenance boot exported TF1 p7 to macOS on RG40XXV; whole-TF2 policy is automated-tested but still needs real-card validation |
 | GLES video / input / audio in NextUI | ✅ (NextUI runs; port already validated these) |
@@ -108,8 +108,9 @@ superblock mount-counts, and `fbsplash` breadcrumbs as boot-stage forensics.
 - BusyBox `cp` has no `--sparse`; use plain `cp` + `truncate` for sparse test images.
 - Growing a partition while a sibling is mounted needs the **`BLKPG` ioctl**, not
   `partprobe` (which EBUSYs). `gptgrow` does BLKPG.
-- Dropbear serves sftp: it execs the static OpenSSH `/usr/libexec/sftp-server` for the
-  `sftp` subsystem (2024.85 default `SFTPSERVER_PATH`), so `sftp`/`scp` work directly.
+- Dropbear served sftp by execing the static OpenSSH `/usr/libexec/sftp-server` for the
+  `sftp` subsystem (2024.85 default `SFTPSERVER_PATH`), so `sftp`/`scp` worked directly.
+  Recorded for the next time it matters; neither is shipped now (see the status table).
 - Do **not** try to force the sunxi USB role. Writing `usbc0/otg_role` (e.g.
   `echo usb_device > otg_role`) **wedges the writer in an uninterruptible D-state** on the
   4.9.170 vendor kernel — reproduced both with and without a gadget bound, and only a
@@ -156,8 +157,8 @@ superblock mount-counts, and `fbsplash` breadcrumbs as boot-stage forensics.
   ten supported images with per-target boot partitions, model identity and logos.
   Physical BaseOS validation beyond RG40XXV remains outstanding and must be recorded
   per model rather than inferred from successful image construction.
-- **Silence boot breadcrumbs / release vs dev image split** (serial getty, dropbear
-  SSH/sftp and adb-over-USB are dev conveniences).
+- **Silence boot breadcrumbs / release vs dev image split** (serial getty and
+  adb-over-USB are dev conveniences).
 - **PortMaster** later: the kernel already has squashfs + loop + overlay built in;
   glibc 2.35 is in place and `/etc/os-release` is now generated from `VERSION`. The
   512 MiB rootfs slot was sized with this in mind — 100 MB used, 5× headroom.

@@ -1,17 +1,17 @@
 #!/bin/sh
-# Development conveniences (SSH, SFTP, ADB), started by rcS in the background.
+# Development conveniences (adb), started by rcS in the background.
 # This file is only installed in dev-flavour images (build-rootfs.sh).
 
-# SSH is not started here any more: it needs WiFi, and the radios are opt-in via
-# a card marker (see rcS and ags-net). adb is different - it runs over USB, it
-# is the only way onto a device with no console, and it costs nothing when no
-# cable is attached - so it stays unconditional.
+# There is no SSH to start: it could only be reached over the radio this product
+# does not bring up, so dropbear is not built or shipped at all. adb is different
+# - it runs over USB, it is the only way onto a device with no console, and it
+# costs nothing when no cable is attached - so it stays unconditional.
 
 # adb-over-USB gadget. `setup` composes the gadget, starts adbd, does the first
 # bind, and starts one blocking uevent listener that re-binds on later replugs
 # (the sunxi OTG manager clears the UDC binding on every disconnect). Safe no-op
-# when the kernel/hardware USB bits are absent; backgrounded so dropbear keygen
-# and the gadget bring-up don't serialise.
+# when the kernel/hardware USB bits are absent; backgrounded so it can never
+# delay the rest of rcS.
 [ -x /usr/sbin/usb-gadget-adb ] && /usr/sbin/usb-gadget-adb setup &
 
 # Boot instrumentation: dev services launched.

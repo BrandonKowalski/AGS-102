@@ -2,13 +2,11 @@
 # Build/fetch the static aarch64 tools for the base OS rootfs:
 #   work/tools/busybox        (Alpine busybox-static: init, ash, mount, insmod,
 #                              udhcpc, hwclock, getty, poweroff, vi, top, ...)
-#   work/tools/dropbearmulti  (static dropbear + dropbearkey + dbclient + scp)
 #   work/tools/curl           (static HTTPS client used by RetroAchievements)
 #   work/tools/ca-certificates.crt (TLS trust store)
 #   work/tools/fbsplash       (framebuffer boot splash)
 #   work/tools/gptgrow        (grow last GPT partition on first boot)
 #   work/tools/gptslot        (A/B root-slot geometry + flip for updates)
-#   work/tools/sftp-server    (OpenSSH sftp subsystem child for dropbear)
 #   work/tools/adbd           (Android adb daemon, USB-only, static)
 # Must use --platform linux/arm64 so the produced binaries are aarch64 for the
 # handheld (native on Apple Silicon; QEMU on Intel hosts).
@@ -19,22 +17,15 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/tools/docker-platform.sh"
 TOOLS="$HERE/work/tools"
 mkdir -p "$TOOLS"
-# Do not let an obsolete reconnect helper linger in a reused tools directory.
-rm -f "$TOOLS/usb-gadget-watch"
+# Do not let obsolete binaries linger in a reused tools directory: a reconnect
+# helper that no longer exists, and the SSH pair this product dropped along with
+# the network it needed.
+rm -f "$TOOLS/usb-gadget-watch" "$TOOLS/dropbearmulti" "$TOOLS/sftp-server"
 
 docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out alpine:3.20 sh -euc '
   apk add -q busybox-static
   cp /bin/busybox.static /out/busybox
-
-  apk add -q build-base zlib-dev zlib-static curl
-  cd /tmp
-  curl -fsSLO https://matt.ucc.asn.au/dropbear/releases/dropbear-2024.85.tar.bz2
-  tar xf dropbear-2024.85.tar.bz2
-  cd dropbear-2024.85
-  ./configure --enable-static --disable-lastlog --disable-wtmp >/dev/null
-  make -j"$(nproc)" PROGRAMS="dropbear dropbearkey dbclient scp" MULTI=1 >/dev/null
-  cp dropbearmulti /out/dropbearmulti
-  chmod 755 /out/busybox /out/dropbearmulti
+  chmod 755 /out/busybox
 '
 
 # curl: NextUI's HTTP layer invokes the CLI for RetroAchievements. Build it in
@@ -87,26 +78,6 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   strip /out/gptslot
 '
 
-# sftp-server: dropbear 2024.85 ships the sftp subsystem execing
-# SFTPSERVER_PATH=/usr/libexec/sftp-server, so the transport (owned by dropbear)
-# hands each sftp session to this OpenSSH helper. It needs no crypto of its own,
-# so build it without OpenSSL and without zlib for a small static binary.
-docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out alpine:3.20 sh -euc '
-  apk add -q build-base linux-headers ca-certificates zlib-dev zlib-static
-  OPENSSH_VERSION=10.4p1
-  OPENSSH_SHA256=ef6026dd2aea8d56059638d5d3262902c892ceba9f88395835e0d06d3fb63238
-  cd /tmp
-  wget -q "https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-$OPENSSH_VERSION.tar.gz"
-  echo "$OPENSSH_SHA256  openssh-$OPENSSH_VERSION.tar.gz" | sha256sum -c -
-  tar xf "openssh-$OPENSSH_VERSION.tar.gz"
-  cd "openssh-$OPENSSH_VERSION"
-  ./configure --without-openssl --without-zlib --without-pam LDFLAGS=-static >/dev/null
-  make sftp-server >/dev/null
-  strip sftp-server
-  cp sftp-server /out/sftp-server
-  chmod 755 /out/sftp-server
-'
-
 # adbd: Android adb daemon (android-tools 4.2.2+git20130218). Built static for
 # musl, out-of-tree via the Debian adbd makefile, exactly as Buildroot drives it
 # in package/android-tools/android-tools.mk: unpack the Debian packaging into the
@@ -143,8 +114,8 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   chmod 755 /out/adbd
 '
 
-file "$TOOLS/busybox" "$TOOLS/dropbearmulti" "$TOOLS/curl" \
-  "$TOOLS/fbsplash" "$TOOLS/gptgrow" "$TOOLS/gptslot" "$TOOLS/sftp-server" \
+file "$TOOLS/busybox" "$TOOLS/curl" \
+  "$TOOLS/fbsplash" "$TOOLS/gptgrow" "$TOOLS/gptslot" \
   "$TOOLS/adbd" 2>/dev/null || true
 [ -x "$TOOLS/gptslot" ] || { echo "gptslot build did not produce an executable" >&2; exit 1; }
 [ -x "$TOOLS/curl" ] || { echo "curl build did not produce an executable" >&2; exit 1; }
@@ -152,9 +123,6 @@ file "$TOOLS/curl" | grep -q "statically linked" \
   || { echo "curl build is not static" >&2; exit 1; }
 [ -s "$TOOLS/ca-certificates.crt" ] \
   || { echo "curl CA bundle is missing or empty" >&2; exit 1; }
-[ -x "$TOOLS/sftp-server" ] || { echo "sftp-server build did not produce an executable" >&2; exit 1; }
-file "$TOOLS/sftp-server" | grep -q "statically linked" \
-  || { echo "sftp-server build is not static" >&2; exit 1; }
 [ -x "$TOOLS/adbd" ] || { echo "adbd build did not produce an executable" >&2; exit 1; }
 file "$TOOLS/adbd" | grep -q "statically linked" \
   || { echo "adbd build is not static" >&2; exit 1; }

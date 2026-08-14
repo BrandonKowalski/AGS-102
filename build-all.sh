@@ -40,7 +40,6 @@ done
 # Same staleness rule as build-stockmod.sh: existence alone cannot see a source
 # edit, and a stale binary beside fresh overlay scripts fails only on a device.
 if [ ! -x "$HERE/work/tools/busybox" ] \
-  || [ ! -x "$HERE/work/tools/dropbearmulti" ] \
   || [ ! -x "$HERE/work/tools/fbsplash" ] \
   || [ ! -x "$HERE/work/tools/gptgrow" ] \
   || ! "$HERE/tools/tools-stamp.sh" | cmp -s - "$HERE/work/tools/.stamp"; then

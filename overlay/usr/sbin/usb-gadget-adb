@@ -92,7 +92,8 @@ storage_device_or_child_is_mounted() {
 }
 
 do_setup() {
-	# adb defaults on (same posture as dropbear); /data/no-adb disables just the
+	# adb defaults on — it is the only way onto a device with no console now that
+	# SSH is gone; /data/no-adb disables just the
 	# adb function. USB storage is independently selected by rcS, which writes
 	# the safely-unmounted block device into /run. The env overrides are test
 	# hooks and also make one-off diagnosis possible without changing policy.

@@ -38,7 +38,8 @@ anything older than the version you are running is ignored — so old ones lying
 cannot downgrade you or get in the way of a new one. Each release page also lists the
 file's SHA-256 checksum if you want to verify your download.
 
-If you copied an update and nothing happened, ask the handheld why over SSH:
+If you copied an update and nothing happened, ask the handheld why over adb
+(`adb shell`, with a data-capable USB-C cable connected before power-on):
 
 ```sh
 baseos-update status

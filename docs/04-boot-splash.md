@@ -35,7 +35,7 @@ reinterpreted as progress — see [06](06-status-and-lessons.md) for the boot th
 - Text is **crisp anti-aliased Lexend Light** via **freetype**, statically linked into
   the binary (it's built in a musl container, so it can't dynamically link the
   device's glibc freetype — it static-links freetype instead, staying a self-contained
-  ~1.1 MB binary like busybox/dropbear). The font (`assets/boot.ttf`) is a Light static
+  ~1.1 MB binary like busybox). The font (`assets/boot.ttf`) is a Light static
   instance of the variable Lexend, vendored in-repo with its OFL licence.
 - Pill labels render in high contrast over the carved-out surface.
 - If the font is ever missing it falls back to a built-in 5×7 bitmap font, so boot can
@@ -128,7 +128,7 @@ than growing the payload a p2 member: the RG28XX had no BaseOS installed base to
 when this landed — its first hardware validation *is* this change
 ([06](06-status-and-lessons.md) §1) — and writing p2 at runtime would put the vfat U-Boot
 reads its DTBs from behind a write with no A/B protection: a cosmetic gain against a
-boot-failure risk. An already-flashed card takes the new logo by reflashing, or over SSH:
+boot-failure risk. An already-flashed card takes the new logo by reflashing, or over adb:
 
 ```sh
 mkdir -p /tmp/p2 && mount -t vfat /dev/mmcblk0p2 /tmp/p2 \

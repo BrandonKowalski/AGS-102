@@ -31,7 +31,8 @@ Stock Anbernic + NextUI baseline: **17.5 s** (manually measured with a stopwatch
 - First-boot expansion of the data partition to fill the SD card.
 - Easy updates: copy one file onto the card and reboot. No reflashing, and
   your ROMs, saves and settings are untouched.
-- SSH/SFTP over Wi-Fi and adb over USB active by default.
+- adb over USB active by default. There is no SSH server: it could only be
+  reached over a radio this OS does not bring up.
 - USB storage mode (hold MENU when powering on).
 
 Currently BaseOS only supports NextUI as its frontend. Additional frontends

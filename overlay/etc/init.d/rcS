@@ -124,7 +124,7 @@ fi
 # neither can ever delay the hand-off. adb is not gated: it is USB rather than
 # network, and it is the only way onto a device with no console.
 if [ -x /usr/sbin/ags-net ]; then
-	[ -f /mnt/sdcard/System/network.on ] && /usr/sbin/ags-net ssh &
+	[ -f /mnt/sdcard/System/network.on ] && /usr/sbin/ags-net wifi &
 	[ -f /mnt/sdcard/System/bluetooth.on ] && /usr/sbin/ags-net bt &
 fi
 
@@ -137,7 +137,7 @@ if [ "$USB_STORAGE_MODE" -eq 0 ]; then
 	[ -x /usr/sbin/baseos-update ] && /usr/sbin/baseos-update apply
 fi
 
-# Dev image extras (serial getty is in inittab; this starts SSH).
+# Dev image extras (serial getty is in inittab; this starts adb).
 [ -x /etc/init.d/dev ] && /etc/init.d/dev &
 
 /bin/cut -d" " -f1 /proc/uptime > /run/boot-rcS-done

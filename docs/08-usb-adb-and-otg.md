@@ -6,7 +6,7 @@ implementation in `/usr/sbin/usb-gadget-adb`.
 
 ## Decision
 
-Enable USB-only adb by default alongside BaseOS's SSH/SFTP service. For reliable adb,
+Enable USB-only adb by default, as the sole way onto the device. For reliable adb,
 the data cable must be connected before the handheld is powered on. If the cable is
 disconnected, restart with it connected. BaseOS does not run a reconnect watcher,
 poll the port, force a USB role, or modify the vendor DTB.

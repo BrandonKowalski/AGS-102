@@ -13,7 +13,7 @@ Kernel-relative markers are written to `/run/boot-*` by `rcS` / `nextui-session`
 | `boot-rcS-start` | 2.04 s | our init reached the first breadcrumb (proc/sys/dev/tmpfs mounted) |
 | `boot-rcS-done` | 2.59 s | modules requested, `/data` + card mounted (~0.55 s of rcS) |
 | `boot-frontend-exec` | 2.80 s | `launch.sh` handed control to NextUI |
-| `boot-dev-done` | TBD | `/etc/init.d/dev` finished starting dropbear + launching the adb gadget script |
+| `boot-dev-done` | TBD | `/etc/init.d/dev` finished launching the adb gadget script |
 | `boot-adb-gadget-done` | TBD | the adb gadget bound its UDC (off the critical path — see §6) |
 
 > The `dev` / `adb-gadget` markers are **measured per release**: they sit off the
@@ -151,9 +151,9 @@ force-off behaviour.
 
 The single USB-C port is a charge port that also exposes a USB peripheral controller.
 Base OS drives it as a Google adb gadget so a host can `adb shell`/`adb push`/`adb pull`
-over the cable — **USB only, no TCP** by design (same root/no-auth dev posture as the
-root/root dropbear; keeping it off the network avoids exposing an unauthenticated shell
-over WiFi). `/usr/sbin/usb-gadget-adb` composes the gadget; it is launched **backgrounded
+over the cable — **USB only, no TCP** by design (a root/no-auth shell that a cable must
+be physically attached to reach; keeping it off the network is what makes that posture
+defensible). `/usr/sbin/usb-gadget-adb` composes the gadget; it is launched **backgrounded
 from `/etc/init.d/dev`** (itself already backgrounded off `rcS`, [01](01-rootfs-and-init.md) §5).
 
 **Role: preserve stock dual-role OTG.** The USB-C port is shared between peripheral
@@ -202,8 +202,9 @@ rebinder for this partial recovery case: none can repair a later attach where th
 manager selects host role, and forcing the role would compromise OTG support. If adb
 is disconnected, power off and start again with the cable connected.
 
-**User stance.** adb is on by default, matching SSH/SFTP, but is reachable only by a
-physically connected USB data cable present during power-on; the daemon has no TCP
+**User stance.** adb is on by default and is the only way onto the device, but is
+reachable only by a physically connected USB data cable present during power-on;
+the daemon has no TCP
 5555 fallback. Create `/data/no-adb` and reboot to disable it. No frontend setting is
 required, keeping this OS-owned developer access independent of the installed
 frontend.

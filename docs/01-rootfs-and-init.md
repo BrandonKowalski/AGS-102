@@ -31,7 +31,7 @@ Four sources, assembled by `build-rootfs.sh` (see [02](02-image-build-and-flash.
    - the 3 kernel modules; `/usr/share/zoneinfo`; terminfo for `linux`/`vt100`/`xterm`
    - `ldconfig` (+ `ld.so.conf*`) — the build runs it to generate `ld.so.cache` so the
      multiarch dir resolves
-3. **Static tools built once in a container** — Dropbear for dev SSH/scp, `curl`
+3. **Static tools built once in a container** — `curl`
    with a CA bundle for frontend HTTP clients, plus **`fbsplash`**, **`gptgrow`** and
    **`gptslot`** (see [04](04-boot-splash.md), [03](03-first-boot-and-expand.md),
    [07](07-partition-layout-and-updates.md)).
@@ -95,7 +95,7 @@ ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100   # serial console (harmless wi
    NextUI's `GFX_init` ~2 s later, and the insmod costs ~0.7 s; backgrounding it
    overlaps the card mount (see the timing win in [05](05-runtime-power-network.md))
 4. mount p6 (`UDISK`) → `/data` (persistent state, unaffected by a slot flip); create
-   `/data/{bluetooth,bluealsa,dropbear}`; symlink `/var/lib/bluetooth → /data/bluetooth`;
+   `/data/{bluetooth,bluealsa}`; symlink `/var/lib/bluetooth → /data/bluetooth`;
    restore the persisted timezone through `/run/localtime`; run `baseos-update
    boot-check`, which counts trial boots after a system update and restores the
    previous slot if this one never reaches a frontend session
@@ -115,8 +115,8 @@ ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100   # serial console (harmless wi
    copied a `*.bosupd` payload onto the card it writes the inactive rootfs slot,
    verifies it, flips the GPT and reboots; deferred while USB storage is active
    ([07](07-partition-layout-and-updates.md))
-9. start dev extras (`/etc/init.d/dev` → dropbear SSH/sftp-server and the
-   backgrounded adb-over-USB gadget via `usb-gadget-adb`, see
+9. start dev extras (`/etc/init.d/dev` → the backgrounded adb-over-USB gadget
+   via `usb-gadget-adb`, see
    [05](05-runtime-power-network.md) §6) in the background
 
 No udev, no mdev: devtmpfs auto-creates nodes, SDL runs with

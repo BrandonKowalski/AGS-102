@@ -1,21 +1,49 @@
 #!/bin/sh
-# Post-flash functional validation for the base OS, run from the Mac against
-# a booted device (enable WiFi in NextUI settings first, or use serial).
+# Post-flash functional validation for the base OS, run from the Mac against a
+# booted device over adb.
 #
-# Usage: ./validate-on-device.sh <target> <device-ip> [root-password]
+# adb rather than ssh: this product ships no SSH server, because SSH could only
+# ever be reached over the radio it does not bring up. adb runs over USB, needs
+# no address, no password and no network, and is the only way onto a device with
+# no console. Connect a data-capable USB-C cable before powering the device on.
+#
+# Usage: ./validate-on-device.sh <target> [adb-serial]
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-TARGET="${1:?usage: validate-on-device.sh <target> <device-ip> [password]}"
-IP="${2:?usage: validate-on-device.sh <target> <device-ip> [password]}"
-PW="${3:-root}"
+TARGET="${1:?usage: validate-on-device.sh <target> [adb-serial]}"
+SERIAL="${2:-}"
 eval "$(python3 "$HERE/tools/device_profile.py" shell "$TARGET")"
 
-sshpass -p "$PW" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 "root@$IP" \
-	env BASEOS_EXPECTED_TARGET="$TARGET" BASEOS_EXPECTED_WIFI="$PROFILE_WIFI" \
-	    BASEOS_EXPECTED_ROTATION="$PROFILE_PANEL_ROTATION_CCW" \
-	    BASEOS_EXPECTED_PANEL_WIDTH="$PROFILE_BOOTLOGO_WIDTH" \
-	    BASEOS_EXPECTED_PANEL_HEIGHT="$PROFILE_BOOTLOGO_HEIGHT" sh -s <<'REMOTE'
+command -v adb >/dev/null 2>&1 \
+	|| { echo "adb is required (brew install android-platform-tools)" >&2; exit 1; }
+
+# Every adb call carries the same target selection, so build it once.
+if [ -n "$SERIAL" ]; then set -- -s "$SERIAL"; else set --; fi
+
+adb "$@" get-state >/dev/null 2>&1 || {
+	echo "no device over adb. Connect a data-capable USB-C cable and power on" >&2
+	echo "with it attached; 'adb devices' should list the handheld." >&2
+	exit 1
+}
+
+# The script is pushed and run rather than piped to `adb shell sh -s`: the adbd
+# this OS ships (android-tools 4.2.2+git20130218) predates shell protocol v2, so
+# stdin to a non-interactive shell is unreliable. That same vintage is why the
+# device's exit status cannot come back over adb at all — the host sees adb's own
+# status, not the command's — so the remote script prints a RESULT line and this
+# side parses it. Old adbd also translates LF to CRLF, hence the tr.
+LOCAL_SCRIPT="$(mktemp "${TMPDIR:-/tmp}/baseos-validate.XXXXXX")"
+trap 'rm -f "$LOCAL_SCRIPT"' EXIT
+REMOTE_PATH=/tmp/baseos-validate.sh
+
+{
+	echo "BASEOS_EXPECTED_TARGET=$TARGET"
+	echo "BASEOS_EXPECTED_WIFI=$PROFILE_WIFI"
+	echo "BASEOS_EXPECTED_ROTATION=$PROFILE_PANEL_ROTATION_CCW"
+	echo "BASEOS_EXPECTED_PANEL_WIDTH=$PROFILE_BOOTLOGO_WIDTH"
+	echo "BASEOS_EXPECTED_PANEL_HEIGHT=$PROFILE_BOOTLOGO_HEIGHT"
+	cat <<'REMOTE'
 pass=0; fail=0
 ok()   { echo "PASS: $1"; pass=$((pass+1)); }
 bad()  { echo "FAIL: $1"; fail=$((fail+1)); }
@@ -70,22 +98,30 @@ chk "battery sysfs (AXP2202)"          "test -r /sys/class/power_supply/axp2202-
 chk "thermal zones"                    "test -r /sys/class/thermal/thermal_zone0/temp"
 chk "deep sleep available (mem)"       "grep -q mem /sys/power/state"
 chk "rumble sysfs (moto)"              "test -w /sys/class/power_supply/axp2202-battery/moto"
-if [ "$BASEOS_EXPECTED_WIFI" = 1 ]; then
+
+echo "=== radios ==="
+# The radios are opt-in via a card marker, so the correct expectation depends on
+# whether the card asked for them — a loaded 8821cs on a card that did not is as
+# much a failure as a missing one on a card that did.
+if [ "$BASEOS_EXPECTED_WIFI" = 1 ] && [ -f /mnt/sdcard/System/network.on ]; then
 	chk "wifi module loaded (8821cs)"  "grep -q 8821cs /proc/modules"
 	chk "wifi interface (wlan0)"       "test -d /sys/class/net/wlan0"
 else
-	chk "wifi legitimately absent"     "! grep -q 8821cs /proc/modules && ! test -d /sys/class/net/wlan0"
+	chk "wifi stays off (no System/network.on)" \
+		"! grep -q 8821cs /proc/modules && ! test -d /sys/class/net/wlan0"
 fi
 
-echo "=== NextUI ==="
+echo "=== frontend ==="
 chk "SD card mounted (/mnt/sdcard)"    "mountpoint -q /mnt/sdcard"
-chk "nextui.elf running"               "pidof nextui.elf"
-chk "keymon running"                   "pidof keymon.elf"
+chk "slot running"                     "pidof slot"
 
 echo "=== dev services ==="
-chk "sftp-server present + executable"  "test -x /usr/libexec/sftp-server"
+# SSH is not merely disabled, it is not built: no dropbear, no sftp helper, and
+# nothing listening on 22 even if a card brought the radio up.
+chk "no SSH server shipped"             "! test -e /usr/sbin/dropbear && ! test -e /usr/libexec/sftp-server"
+chk "nothing listening on TCP 22"       "! netstat -lnt 2>/dev/null | grep -q ':22 '"
 chk "adbd running"                      "pidof adbd"
-chk "adb has no TCP 5555 listener"       "! netstat -lnt 2>/dev/null | grep -q ':5555 '"
+chk "adb has no TCP 5555 listener"      "! netstat -lnt 2>/dev/null | grep -q ':5555 '"
 # The adb gadget is bound to the always-present UDC; device (peripheral) mode is
 # auto-selected by the sunxi manager on cable attach. We deliberately do NOT
 # force usbc0/otg_role — writing it wedges the writer in D-state on this vendor
@@ -105,5 +141,20 @@ done
 
 echo
 echo "=== RESULT: $pass passed, $fail failed ==="
-exit $fail
 REMOTE
+} > "$LOCAL_SCRIPT"
+
+adb "$@" push "$LOCAL_SCRIPT" "$REMOTE_PATH" >/dev/null 2>&1 \
+	|| { echo "could not push the validation script to the device" >&2; exit 1; }
+OUTPUT="$(adb "$@" shell sh "$REMOTE_PATH" | tr -d '\r')"
+adb "$@" shell rm -f "$REMOTE_PATH" >/dev/null 2>&1 || true
+
+printf '%s\n' "$OUTPUT"
+
+FAILED="$(printf '%s\n' "$OUTPUT" | sed -n 's/^=== RESULT: [0-9]* passed, \([0-9]*\) failed ===$/\1/p')"
+[ -n "$FAILED" ] || {
+	echo >&2
+	echo "validation did not run to completion on the device (no RESULT line)" >&2
+	exit 1
+}
+exit "$FAILED"
