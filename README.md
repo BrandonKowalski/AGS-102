@@ -29,8 +29,6 @@ Stock Anbernic + NextUI baseline: **17.5 s** (manually measured with a stopwatch
 - Full support for the handheld's display, sound, controls, networking, HDMI, LEDs,
   deep sleep and other features. No comporise on that front.
 - First-boot expansion of the data partition to fill the SD card.
-- Easy updates: copy one file onto the card and reboot. No reflashing, and
-  your ROMs, saves and settings are untouched.
 - adb over USB active by default. There is no SSH server: it could only be
   reached over a radio this OS does not bring up.
 - USB storage mode (hold MENU when powering on).

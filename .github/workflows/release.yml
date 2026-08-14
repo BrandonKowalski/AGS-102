@@ -1,4 +1,8 @@
-# Build the RG SP release artifacts, and publish them when a version is tagged.
+# Build the RG SP release image, and publish it when a version is tagged.
+#
+# A release carries exactly one asset: ags102.img.zip. build-all.sh also produces
+# a .bosupd update payload and its own versioned zip; neither is published, so
+# moving between versions means reflashing.
 #
 # The same steps run for pushes to main and for tags; only the final publish
 # step is gated. A release therefore never takes a code path that has not
@@ -92,28 +96,30 @@ jobs:
         # can never become a release.
         run: ./build-all.sh "$TARGET"
 
-      - name: Write SHA256SUMS
+      - name: Package the release image
         id: artifacts
         run: |
           version="$(tr -d ' \n' < VERSION)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           cd "work/$TARGET"
-          # Hashes of the published files, checkable with sha256sum against the
-          # download. This is not the image-sha256 the update engine verifies on
-          # the device — that one covers the slot image inside the payload.
-          sha256sum \
-            "baseos-$TARGET-$version.img.zip" \
-            "baseos-$TARGET-$version.bosupd" \
-            | tee SHA256SUMS
+          # The published asset is named for the product, not for the build, so
+          # the download is ags102.img.zip holding a bare ags102.img. A hardlink
+          # does the rename without copying 1.4 GB; -j keeps the archive flat and
+          # -X keeps host filesystem metadata out of a published file.
+          rm -f ags102.img ags102.img.zip
+          ln "baseos-$TARGET.img" ags102.img
+          zip -q -j -X ags102.img.zip ags102.img
+          rm -f ags102.img
+          sum="$(sha256sum ags102.img.zip | cut -d' ' -f1)"
+          echo "sha256=$sum" >> "$GITHUB_OUTPUT"
+          ls -lh ags102.img.zip
+          echo "$sum  ags102.img.zip"
 
-      - name: Upload the artifacts
+      - name: Upload the artifact
         uses: actions/upload-artifact@v4
         with:
-          name: baseos-${{ env.TARGET }}-${{ steps.artifacts.outputs.version }}
-          path: |
-            work/${{ env.TARGET }}/baseos-${{ env.TARGET }}-${{ steps.artifacts.outputs.version }}.img.zip
-            work/${{ env.TARGET }}/baseos-${{ env.TARGET }}-${{ steps.artifacts.outputs.version }}.bosupd
-            work/${{ env.TARGET }}/SHA256SUMS
+          name: ags102-${{ steps.artifacts.outputs.version }}
+          path: work/${{ env.TARGET }}/ags102.img.zip
           if-no-files-found: error
 
       - name: Publish the release
@@ -122,10 +128,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ steps.artifacts.outputs.version }}
+          SHA256: ${{ steps.artifacts.outputs.sha256 }}
         run: |
+          # The checksum travels in the notes rather than as a second asset: the
+          # release publishes exactly one file, and a checksum is only useful
+          # written next to the download it covers.
+          cat > /tmp/notes.md <<EOF
+          Flash \`ags102.img.zip\` to an SD card. Reflash to move between
+          versions — this release publishes no in-place update payload.
+
+          \`\`\`
+          SHA-256  $SHA256  ags102.img.zip
+          \`\`\`
+          EOF
           gh release create "${GITHUB_REF#refs/tags/}" \
-            --title "BaseOS $VERSION" \
+            --title "AGS-102 $VERSION" \
+            --notes-file /tmp/notes.md \
             --generate-notes \
-            "work/$TARGET/baseos-$TARGET-$VERSION.img.zip" \
-            "work/$TARGET/baseos-$TARGET-$VERSION.bosupd" \
-            "work/$TARGET/SHA256SUMS"
+            "work/$TARGET/ags102.img.zip"
