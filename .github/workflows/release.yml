@@ -103,11 +103,15 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           cd "work/$TARGET"
           # The published asset is named for the product, not for the build, so
-          # the download is ags102.img.zip holding a bare ags102.img. A hardlink
-          # does the rename without copying 1.4 GB; -j keeps the archive flat and
-          # -X keeps host filesystem metadata out of a published file.
+          # the download is ags102.img.zip holding a bare ags102.img. mv rather
+          # than a hardlink or a copy: build-image.sh writes the image from a
+          # container, so it is owned by root and protected_hardlinks denies the
+          # unprivileged runner a link to it, while a copy would move 1.4 GB for
+          # nothing. A rename needs write permission on the directory, which the
+          # runner has, and this is the last step to want the original name.
+          # -j keeps the archive flat, -X keeps host metadata out of it.
           rm -f ags102.img ags102.img.zip
-          ln "baseos-$TARGET.img" ags102.img
+          mv "baseos-$TARGET.img" ags102.img
           zip -q -j -X ags102.img.zip ags102.img
           rm -f ags102.img
           sum="$(sha256sum ags102.img.zip | cut -d' ' -f1)"
