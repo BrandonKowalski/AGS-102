@@ -141,11 +141,54 @@ to-do in [06](06-status-and-lessons.md).
 
 ## 5. Power button / poweroff
 
-There is no `systemd-logind` on base OS. NextUI's `keymon` reads the power key
-(event0, `axp2202-pek`) directly and writes `/tmp/poweroff` / `/tmp/reboot` sentinels
-that `launch.sh` acts on; BusyBox init runs the poweroff/reboot. A **long-press powers
-off in hardware** at the AXP2202 PMIC regardless of software — normal, expected
-force-off behaviour.
+There is no `systemd-logind` on base OS. The frontend reads the power key
+(event0, `axp2202-pek`) directly and runs `poweroff` or `reboot`; BusyBox init
+runs the single `::shutdown:` action, `/etc/init.d/rcK`, for both. A
+**long-press powers off in hardware** at the AXP2202 PMIC after 6 s
+(`pmu_powkey_off_time = 6000`) regardless of software — normal, expected
+force-off behaviour, and it stays off even on a charger.
+
+**The kernel's power off does not stay off while a charger is attached.**
+`reboot(RB_POWER_OFF)` reaches PSCI `SYSTEM_OFF` and BL31, the shutdown completes
+normally — `rcK` logs its `START` and `DONE` — and the PMIC brings the device
+back about seven seconds later reporting `bootreason=charger`. Measured
+repeatedly on an RG SP. Unplugged it stays off, which is what made this look for
+a while like a hang rather than a restart. Left unhandled it turned any device on
+a charger into a five-minute cycle, because the frontend's doze timeout ends in a
+`poweroff`.
+
+So `rcK` ends by writing the PMU's own soft-poweroff bit over i2c
+(`/usr/sbin/axp-off`, AXP717 `REG27H[0]`), which does stay off. Two consequences
+beyond the charger case: the PMIC cut never walks the kernel's device
+`.shutdown()` hooks, so a live `mali_kbase` cannot hang that path at all; and a
+power off no longer depends on what BL31 does with the PMU.
+
+BusyBox init gives `rcK` no way to tell a poweroff from a reboot, so
+`/sbin/poweroff` is a **shim** that records the intent in
+`/run/poweroff-requested`. Absent the marker `rcK` takes the reboot path, and
+that default is deliberate: a poweroff that falls through merely restarts on the
+charger, which is what shipped before, while a reboot that powers off would
+strand `baseos-update` after a slot flip. `/run` is tmpfs, so a marker cannot
+survive a boot and be mistaken for a fresh request.
+
+**A charger boot ends itself.** The PMIC powers the rails up whenever VBUS
+appears — vendor behaviour, not a fault — and U-Boot records the cause as
+`bootreason=charger` (mirrored at `axp2202-battery/boot_mode`). `rcS` sees it
+early, before `baseos-update boot-check`, the card mount or any frontend, and
+calls `axp-off` directly, so the handheld charges with the machine off instead of
+running a frontend against its own charger. U-Boot has already drawn its battery
+screen from p2 by then, so the cable still gives visible feedback. POWER produces
+`bootreason=button` and a completely normal boot with the cable attached, which
+is what keeps adb reachable.
+
+Guards on that branch: a real `/data` (the tmpfs fallback cannot remember
+anything between boots), `/data/no-charger-off` as an opt-out, a readable RTC,
+and a 120 s window that stops a loop if the write ever fails. The opt-out exists
+because this hardware **cannot** distinguish a host PC from a dumb charger — the
+driver publishes no `usb_type` and BC detection reads empty.
+
+Full measurements and the two theories that were tested and killed on the way:
+[`diagnostics/results/2026-08-18-charger-boot-and-poweroff.md`](../diagnostics/results/2026-08-18-charger-boot-and-poweroff.md).
 
 ## 6. USB gadget — adb and optional card storage
 
