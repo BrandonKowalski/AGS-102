@@ -120,6 +120,23 @@ frontend's own scripts.
 > not depend on the frontend to wait. NextUI additionally waits for `wlan0` in its own
 > `wifi_init.sh` (belt-and-suspenders), but Base OS no longer relies on that.
 
+**Association is optional and card-driven.** If the card carries
+`System/wifi.conf`, `ags-net` copies it to tmpfs (the card is exfat: no mode, no
+control socket), starts `wpa_supplicant -Dnl80211`, waits for `wpa_state=COMPLETED`
+and takes a `udhcpc` lease. Without that file the interface is left up and
+unassociated, which is exactly what it did before — and which is why the SSH server
+that once shipped could never be reached by anyone. A card-side config means the
+network can be changed by editing a file on the card from a desktop, with no reflash.
+
+**SSH is opt-in on top of that.** `System/ssh.on` makes `rcS` call `ags-net ssh`,
+which associates and then starts dropbear **key-only** (`-s`), with `authorized_keys`
+copied from the card to `/root/.ssh` at 0600 — dropbear refuses one that is
+group-writable, and every file on an exfat card is. It refuses to start at all when no
+key is installed: root has no password on this image, so a password-authenticating
+listener would be a blank-password listener. Host keys live on `/data` so the
+fingerprint survives an A/B rootfs flip. `ssh.on` implies the radio, so `rcS` checks it
+instead of `network.on` rather than as well — two bring-ups would race one insmod.
+
 - **Power-save.** `rtw_power_mgnt=2` (driver default) — **identical to stock**, kept as
   correct for a handheld's battery. It causes intermittent ICMP latency (aggressive
 - **Power-save.** `rtw_power_mgnt=2` (driver default) — **identical to stock**, kept as
@@ -196,7 +213,7 @@ The single USB-C port is a charge port that also exposes a USB peripheral contro
 Base OS drives it as a Google adb gadget so a host can `adb shell`/`adb push`/`adb pull`
 over the cable — **USB only, no TCP** by design (a root/no-auth shell that a cable must
 be physically attached to reach; keeping it off the network is what makes that posture
-defensible). `/usr/sbin/usb-gadget-adb` composes the gadget; it is launched **backgrounded
+defensible — the network way in is SSH, which authenticates, §3). `/usr/sbin/usb-gadget-adb` composes the gadget; it is launched **backgrounded
 from `/etc/init.d/dev`** (itself already backgrounded off `rcS`, [01](01-rootfs-and-init.md) §5).
 
 **Role: preserve stock dual-role OTG.** The USB-C port is shared between peripheral

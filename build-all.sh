@@ -42,6 +42,7 @@ done
 if [ ! -x "$HERE/work/tools/busybox" ] \
   || [ ! -x "$HERE/work/tools/fbsplash" ] \
   || [ ! -x "$HERE/work/tools/gptgrow" ] \
+  || [ ! -x "$HERE/work/tools/dropbearmulti" ] \
   || ! "$HERE/tools/tools-stamp.sh" | cmp -s - "$HERE/work/tools/.stamp"; then
   "$HERE/build-tools.sh"
 else

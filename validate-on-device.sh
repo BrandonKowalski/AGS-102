@@ -2,10 +2,10 @@
 # Post-flash functional validation for the base OS, run from the Mac against a
 # booted device over adb.
 #
-# adb rather than ssh: this product ships no SSH server, because SSH could only
-# ever be reached over the radio it does not bring up. adb runs over USB, needs
-# no address, no password and no network, and is the only way onto a device with
-# no console. Connect a data-capable USB-C cable before powering the device on.
+# adb rather than ssh: adb runs over USB, needs no address, no password and no
+# network, and is the only way onto a device with no console. The SSH server this
+# product does ship is opt-in per card, so it cannot be assumed present on the
+# device under test. Connect a data-capable USB-C cable before powering on.
 #
 # Usage: ./validate-on-device.sh <target> [adb-serial]
 set -u
@@ -103,11 +103,16 @@ echo "=== radios ==="
 # The radios are opt-in via a card marker, so the correct expectation depends on
 # whether the card asked for them — a loaded 8821cs on a card that did not is as
 # much a failure as a missing one on a card that did.
-if [ "$BASEOS_EXPECTED_WIFI" = 1 ] && [ -f /mnt/sdcard/System/network.on ]; then
+if [ "$BASEOS_EXPECTED_WIFI" = 1 ] && { [ -f /mnt/sdcard/System/network.on ] || [ -f /mnt/sdcard/System/ssh.on ]; }; then
 	chk "wifi module loaded (8821cs)"  "grep -q 8821cs /proc/modules"
 	chk "wifi interface (wlan0)"       "test -d /sys/class/net/wlan0"
+	# ssh.on implies a usable network, not merely a raised interface.
+	if [ -f /mnt/sdcard/System/ssh.on ] && [ -f /mnt/sdcard/System/wifi.conf ]; then
+		chk "wlan0 associated"     "wpa_cli -i wlan0 status 2>/dev/null | grep -q '^wpa_state=COMPLETED'"
+		chk "wlan0 has an address" "ip -4 addr show wlan0 2>/dev/null | grep -q 'inet '"
+	fi
 else
-	chk "wifi stays off (no System/network.on)" \
+	chk "wifi stays off (no System/network.on or ssh.on)" \
 		"! grep -q 8821cs /proc/modules && ! test -d /sys/class/net/wlan0"
 fi
 
@@ -116,10 +121,23 @@ chk "SD card mounted (/mnt/sdcard)"    "mountpoint -q /mnt/sdcard"
 chk "slot running"                     "pidof slot"
 
 echo "=== dev services ==="
-# SSH is not merely disabled, it is not built: no dropbear, no sftp helper, and
-# nothing listening on 22 even if a card brought the radio up.
-chk "no SSH server shipped"             "! test -e /usr/sbin/dropbear && ! test -e /usr/libexec/sftp-server"
-chk "nothing listening on TCP 22"       "! netstat -lnt 2>/dev/null | grep -q ':22 '"
+# SSH ships in every image and starts for nobody who did not ask: a card needs
+# System/ssh.on and an authorized_keys. Both halves are asserted, because a
+# listener on a card that asked for neither is as much a failure as a missing one
+# on a card that asked for both. The sftp helper stays gone - dropbear's own scp
+# is inside the multi binary, and OpenSSH's child was 300 KB serving a subsystem
+# nothing needs.
+chk "SSH server shipped (static multi)" "test -x /usr/sbin/dropbearmulti && test -x /usr/sbin/dropbear"
+chk "no OpenSSH sftp helper"            "! test -e /usr/libexec/sftp-server"
+if [ -f /mnt/sdcard/System/ssh.on ] && [ -s /root/.ssh/authorized_keys ]; then
+	chk "sshd listening on TCP 22"     "netstat -lnt 2>/dev/null | grep -q ':22 '"
+	# The one flag that matters: root has no password, so password auth would be
+	# blank-password auth. Read it off the running process, not off the script.
+	chk "sshd refuses password auth"   'tr "\0" " " < /proc/$(pidof dropbear | cut -d" " -f1)/cmdline | grep -q " -s "'
+	chk "authorized_keys is 0600"      'test "$(stat -c %a /root/.ssh/authorized_keys)" = 600'
+else
+	chk "sshd stays off (no System/ssh.on)" "! netstat -lnt 2>/dev/null | grep -q ':22 '"
+fi
 chk "adbd running"                      "pidof adbd"
 chk "adb has no TCP 5555 listener"      "! netstat -lnt 2>/dev/null | grep -q ':5555 '"
 # The adb gadget is bound to the always-present UDC; device (peripheral) mode is

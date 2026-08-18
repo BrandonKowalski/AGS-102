@@ -2,6 +2,7 @@
 # Build/fetch the static aarch64 tools for the base OS rootfs:
 #   work/tools/busybox        (Alpine busybox-static: init, ash, mount, insmod,
 #                              udhcpc, hwclock, getty, poweroff, vi, top, ...)
+#   work/tools/dropbearmulti  (static dropbear + dropbearkey + dbclient + scp)
 #   work/tools/curl           (static HTTPS client used by RetroAchievements)
 #   work/tools/ca-certificates.crt (TLS trust store)
 #   work/tools/fbsplash       (framebuffer boot splash)
@@ -19,9 +20,10 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 TOOLS="$HERE/work/tools"
 mkdir -p "$TOOLS"
 # Do not let obsolete binaries linger in a reused tools directory: a reconnect
-# helper that no longer exists, and the SSH pair this product dropped along with
-# the network it needed.
-rm -f "$TOOLS/usb-gadget-watch" "$TOOLS/dropbearmulti" "$TOOLS/sftp-server"
+# helper that no longer exists, and the OpenSSH sftp child that once backed
+# dropbear's sftp subsystem. dropbearmulti carries its own scp, so that helper
+# stays gone even though the SSH server has come back.
+rm -f "$TOOLS/usb-gadget-watch" "$TOOLS/sftp-server"
 
 docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out alpine:3.20 sh -euc '
   apk add -q busybox-static
@@ -126,7 +128,39 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   chmod 755 /out/adbd
 '
 
-file "$TOOLS/busybox" "$TOOLS/curl" \
+# dropbear: the SSH server. MULTI=1 puts dropbear, dropbearkey, dbclient and
+# scp in one static binary, so there is no shared-library tail to harvest and
+# no coupling to the stock rootfs's glibc. It is reachable now that ags-net
+# associates rather than merely raising the interface, and it starts only on a
+# card that asks for it (System/ssh.on).
+#
+# Upstream is a single Cloudflare-fronted host that answered 525 during a
+# release build once already, so the fetch retries and the tarball is pinned.
+# The GitHub mirror is deliberately not a fallback: it publishes no release
+# asset, only archives generated per request whose bytes carry no stability
+# guarantee, so no single sha256 could cover both sources.
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out alpine:3.20 sh -euc '
+  apk add -q build-base zlib-dev zlib-static
+  DB_VERSION=2024.85
+  DB_SHA256=86b036c433a69d89ce51ebae335d65c47738ccf90d13e5eb0fea832e556da502
+  cd /tmp
+  n=0
+  until wget -q "https://matt.ucc.asn.au/dropbear/releases/dropbear-$DB_VERSION.tar.bz2"; do
+    n=$((n + 1))
+    [ "$n" -ge 5 ] && { echo "dropbear fetch failed after $n attempts" >&2; exit 1; }
+    sleep 5
+  done
+  echo "$DB_SHA256  dropbear-$DB_VERSION.tar.bz2" | sha256sum -c -
+  tar xf "dropbear-$DB_VERSION.tar.bz2"
+  cd "dropbear-$DB_VERSION"
+  ./configure --enable-static --disable-lastlog --disable-wtmp >/dev/null
+  make -j"$(nproc)" PROGRAMS="dropbear dropbearkey dbclient scp" MULTI=1 >/dev/null
+  strip dropbearmulti
+  cp dropbearmulti /out/dropbearmulti
+  chmod 755 /out/dropbearmulti
+'
+
+file "$TOOLS/busybox" "$TOOLS/curl" "$TOOLS/dropbearmulti" \
   "$TOOLS/fbsplash" "$TOOLS/gptgrow" "$TOOLS/gptslot" \
   "$TOOLS/adbd" 2>/dev/null || true
 [ -x "$TOOLS/gptslot" ] || { echo "gptslot build did not produce an executable" >&2; exit 1; }
@@ -135,6 +169,10 @@ file "$TOOLS/curl" | grep -q "statically linked" \
   || { echo "curl build is not static" >&2; exit 1; }
 [ -s "$TOOLS/ca-certificates.crt" ] \
   || { echo "curl CA bundle is missing or empty" >&2; exit 1; }
+[ -x "$TOOLS/dropbearmulti" ] \
+  || { echo "dropbear build did not produce an executable" >&2; exit 1; }
+file "$TOOLS/dropbearmulti" | grep -q "statically linked" \
+  || { echo "dropbear build is not static" >&2; exit 1; }
 [ -x "$TOOLS/adbd" ] || { echo "adbd build did not produce an executable" >&2; exit 1; }
 file "$TOOLS/adbd" | grep -q "statically linked" \
   || { echo "adbd build is not static" >&2; exit 1; }

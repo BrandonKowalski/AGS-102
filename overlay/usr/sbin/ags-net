@@ -12,15 +12,19 @@
 # it is the only way onto a device with no console, and it costs nothing when no
 # cable is attached.
 #
-# There is no ssh here either. SSH could only ever be reached over the radio
-# this product does not bring up, so dropbear is not built or shipped at all;
-# adb over USB is the way onto a device. `wifi` therefore raises the interface
-# and starts nothing on top of it.
+# ssh is here, but only for a card that asks for one. It was dropped once as
+# unreachable and that was true at the time: `wifi` raised the interface and
+# stopped there, so nothing ever associated and no server could ever be reached.
+# Associating from a card-side config is what closes that gap; `ssh` is gated on
+# System/ssh.on beside it. The server is key-only and refuses to start when the
+# card has installed no key, because root has no password on this image and
+# password auth could therefore only ever be blank-password auth.
 set -u
 
 MODULES="${AGS_MODULES:-/lib/modules}"
 NET="${AGS_NET_SYS:-/sys/class/net}"
 DATA="${AGS_DATA:-/data}"
+CARD="${AGS_CARD:-/mnt/sdcard}"
 
 wifi_up() {
 	[ -f "$MODULES/8821cs.ko" ] || return 0
@@ -41,6 +45,42 @@ wifi_up() {
 	ip link set wlan0 up 2>/dev/null || true
 }
 
+# Association and a lease, from a config the card carries so the network can be
+# changed without reflashing an image. Absent that file this is a no-op and the
+# interface is left up and unassociated, exactly as before.
+wifi_join() {
+	[ -f "$CARD/System/wifi.conf" ] || return 0
+	[ -d "$NET/wlan0" ] || return 0
+
+	# Copied onto tmpfs: wpa_supplicant needs a control socket and somewhere it
+	# can write, and the card is exfat, which is neither. A card config that
+	# already names a ctrl_interface is taken as written.
+	/bin/mkdir -p /var/run/wpa_supplicant
+	if /bin/grep -q '^ctrl_interface=' "$CARD/System/wifi.conf"; then
+		/bin/cp "$CARD/System/wifi.conf" /run/wpa_supplicant.conf
+	else
+		{
+			echo 'ctrl_interface=/var/run/wpa_supplicant'
+			/bin/cat "$CARD/System/wifi.conf"
+		} > /run/wpa_supplicant.conf
+	fi
+	/bin/chmod 600 /run/wpa_supplicant.conf
+
+	wpa_supplicant -B -i wlan0 -c /run/wpa_supplicant.conf -Dnl80211 >/dev/null 2>&1 \
+		|| return 0
+
+	# Association is not instant and a lease cannot be asked for before it
+	# completes. Twenty seconds is long against a boot but this runs backgrounded.
+	n=0
+	while [ "$n" -lt 40 ]; do
+		wpa_cli -i wlan0 status 2>/dev/null | grep -q '^wpa_state=COMPLETED' && break
+		sleep 0.5 2>/dev/null || sleep 1
+		n=$((n + 1))
+	done
+
+	udhcpc -i wlan0 -n -q -t 8 >/dev/null 2>&1 || true
+}
+
 # BlueZ wants a machine-id and somewhere to keep its state. None of it is worth
 # doing on a boot that will never turn Bluetooth on.
 bt_prepare() {
@@ -57,15 +97,56 @@ bt_prepare() {
 	/bin/ln -sf /run/machine-id /var/lib/dbus/machine-id
 }
 
+# The SSH server. Key-only, and silent unless the card installed a key.
+ssh_up() {
+	[ -x /usr/sbin/dropbear ] || return 0
+
+	# The card is exfat: it cannot carry a mode, and dropbear refuses an
+	# authorized_keys that is writable by anyone but its owner. So the key is
+	# copied onto the rootfs, where a mode means something.
+	if [ -f "$CARD/System/authorized_keys" ]; then
+		/bin/mkdir -p /root/.ssh
+		/bin/chmod 700 /root/.ssh
+		/bin/cp "$CARD/System/authorized_keys" /root/.ssh/authorized_keys
+		/bin/chmod 600 /root/.ssh/authorized_keys
+	fi
+	# No key, no listener. A server nobody can authenticate to is the thing that
+	# made this an attack surface rather than a feature the last time it shipped.
+	[ -s /root/.ssh/authorized_keys ] || return 0
+
+	# Host keys on /data so they outlive an A/B rootfs flip and the fingerprint
+	# does not change under the user on every update.
+	/bin/mkdir -p "$DATA/dropbear"
+	for t in rsa ed25519; do
+		k="$DATA/dropbear/dropbear_${t}_host_key"
+		[ -f "$k" ] || dropbearkey -t "$t" -f "$k" >/dev/null 2>&1
+	done
+
+	# -s: password logins refused outright.
+	dropbear -s -r "$DATA/dropbear/dropbear_rsa_host_key" \
+		-r "$DATA/dropbear/dropbear_ed25519_host_key" 2>/dev/null
+}
+
 case "${1:-}" in
-wifi|up)
+wifi)
 	wifi_up
+	wifi_join
+	;;
+ssh)
+	wifi_up
+	wifi_join
+	ssh_up
 	;;
 bt)
 	bt_prepare
 	;;
+up)
+	wifi_up
+	wifi_join
+	ssh_up
+	;;
 *)
-	echo "usage: ags-net [wifi|bt|up]" >&2
+	echo "usage: ags-net [wifi|ssh|bt|up]" >&2
 	exit 2
 	;;
 esac

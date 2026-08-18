@@ -186,11 +186,22 @@ fi
 # Radios, off unless the card asks for them. Nothing in this product needs the
 # network - the frontend is offline and takes its clock from the RTC - and
 # leaving WiFi out of the boot path is worth ~140 ms of rcS (measured on an
-# RG SP: 1.083 s with the module, 0.940 s without). Both are backgrounded so
-# neither can ever delay the hand-off. adb is not gated: it is USB rather than
+# RG SP: 1.083 s with the module, 0.940 s without). All are backgrounded so
+# none can ever delay the hand-off. adb is not gated: it is USB rather than
 # network, and it is the only way onto a device with no console.
+#
+# ssh.on implies the radio and is therefore checked first rather than as well:
+# `ags-net ssh` raises the interface itself, and two concurrent bring-ups would
+# race over one insmod. adb remains the way in when there is no card, no
+# network, or no key - this is the way in when the USB port is the thing that
+# has failed, which is not hypothetical on a device whose OTG manager can latch
+# into the host role and refuse to be a gadget until it is replugged.
 if [ -x /usr/sbin/ags-net ]; then
-	[ -f /mnt/sdcard/System/network.on ] && /usr/sbin/ags-net wifi &
+	if [ -f /mnt/sdcard/System/ssh.on ]; then
+		/usr/sbin/ags-net ssh &
+	elif [ -f /mnt/sdcard/System/network.on ]; then
+		/usr/sbin/ags-net wifi &
+	fi
 	[ -f /mnt/sdcard/System/bluetooth.on ] && /usr/sbin/ags-net bt &
 fi
 

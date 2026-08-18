@@ -11,7 +11,7 @@
 | Seamless static bootlogo → frontend hand-off | ✅ |
 | Deep sleep (real suspend-to-RAM, ~0 drain / 35 min) | ✅ |
 | WiFi unaided bring-up + stable association | ✅ (validated when the frontend's `wifi_init.sh` did the wait; the Base-OS-owned `wlan0` bring-up is not yet hardware-validated) |
-| Dropbear SSH + sftp over WiFi | ➖ removed — validated on hardware via Forklift and scp before the radios became opt-in, then dropped: SSH could only be reached over a network this product does not bring up. adb over USB replaced it. |
+| Dropbear SSH over WiFi | ✅ restored, key-only and opt-in per card (`System/ssh.on` + `authorized_keys`). It was dropped once as unreachable, correctly: `ags-net wifi` raised the interface and stopped, so nothing ever associated. `ags-net` now associates from `System/wifi.conf`, which is the half that was actually missing. The OpenSSH sftp helper stays gone — dropbear's own `scp` is inside the multi binary. |
 | adb over USB (charge port, device role) | ✅ root shell and checksum-matched push/pull validated on RG40XXV with the cable connected before power-on; reconnect requires a cable-connected restart |
 | USB mass storage | ✅ MENU-held maintenance boot exported TF1 p7 to macOS on RG40XXV; whole-TF2 policy is automated-tested but still needs real-card validation |
 | GLES video / input / audio in NextUI | ✅ (NextUI runs; port already validated these) |
@@ -110,7 +110,9 @@ superblock mount-counts, and `fbsplash` breadcrumbs as boot-stage forensics.
   `partprobe` (which EBUSYs). `gptgrow` does BLKPG.
 - Dropbear served sftp by execing the static OpenSSH `/usr/libexec/sftp-server` for the
   `sftp` subsystem (2024.85 default `SFTPSERVER_PATH`), so `sftp`/`scp` worked directly.
-  Recorded for the next time it matters; neither is shipped now (see the status table).
+  The helper is not shipped: `MULTI=1` already puts dropbear's own `scp` in the binary,
+  which costs nothing, and OpenSSH's client reaches it with `scp -O` (its default
+  switched to the SFTP protocol in 9.0). Recorded for the next time sftp itself matters.
 - Do **not** try to force the sunxi USB role. Writing `usbc0/otg_role` (e.g.
   `echo usb_device > otg_role`) **wedges the writer in an uninterruptible D-state** on the
   4.9.170 vendor kernel — reproduced both with and without a gadget bound, and only a

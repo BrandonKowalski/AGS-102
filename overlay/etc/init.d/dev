@@ -2,10 +2,13 @@
 # Development conveniences (adb), started by rcS in the background.
 # This file is only installed in dev-flavour images (build-rootfs.sh).
 
-# There is no SSH to start: it could only be reached over the radio this product
-# does not bring up, so dropbear is not built or shipped at all. adb is different
-# - it runs over USB, it is the only way onto a device with no console, and it
-# costs nothing when no cable is attached - so it stays unconditional.
+# There is no SSH started here, but not because there is none: dropbear ships in
+# every image and ags-net starts it for any card carrying System/ssh.on. It is
+# not a dev-flavour service, because the case it exists for - a USB port that has
+# latched into the host role and will not be a gadget until it is replugged - is
+# not a dev-only accident. adb is different again: it runs over USB, it is the
+# only way onto a device with no console, and it costs nothing when no cable is
+# attached - so it stays unconditional and it stays here.
 
 # adb-over-USB gadget. `setup` composes the gadget, starts adbd, does the first
 # bind, and starts one blocking uevent listener that re-binds on later replugs

@@ -10,9 +10,9 @@
 #
 # Every compiled source in the tree is covered by glob rather than by name, so
 # adding a tool needs no change here and cannot be forgotten. Only sources built
-# into work/tools belong in these directories; busybox, curl and android-tools
-# are pinned upstream releases whose versions live in build-tools.sh, and
-# changing one already changes that file.
+# into work/tools belong in these directories; busybox, curl, dropbear and
+# android-tools are pinned upstream releases whose versions live in
+# build-tools.sh, and changing one already changes that file.
 set -eu
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"

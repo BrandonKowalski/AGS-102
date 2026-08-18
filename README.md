@@ -29,8 +29,8 @@ Stock Anbernic + NextUI baseline: **17.5 s** (manually measured with a stopwatch
 - Full support for the handheld's display, sound, controls, networking, HDMI, LEDs,
   deep sleep and other features. No comporise on that front.
 - First-boot expansion of the data partition to fill the SD card.
-- adb over USB active by default. There is no SSH server: it could only be
-  reached over a radio this OS does not bring up.
+- adb over USB active by default. An SSH server too, but only for a card that
+  asks: `System/ssh.on` plus an `authorized_keys`, key-only and never a password.
 - USB storage mode (hold MENU when powering on).
 
 Currently BaseOS only supports NextUI as its frontend. Additional frontends
