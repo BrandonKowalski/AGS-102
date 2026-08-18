@@ -123,10 +123,22 @@ def main() -> int:
             info.uname = info.gname = "root"
             archive.addfile(info, io.BytesIO(blob))
 
+    # Two different digests, and confusing them is a real hazard. The manifest's
+    # image-sha256 covers the *uncompressed slot* and is what baseos-update
+    # verifies after decompressing; nobody downloading the payload can check it,
+    # because it is not the digest of any file they will ever hold. Publishing it
+    # hands users a hash that can never match, and a failed check looks exactly
+    # like transfer corruption. So hash the payload too, and label both.
+    file_digest = hashlib.sha256()
+    with output.open("rb") as handle:
+        for block in iter(lambda: handle.read(CHUNK), b""):
+            file_digest.update(block)
+
     print(f"payload:  {output} ({output.stat().st_size} bytes)")
     print(f"target:   {target}")
     print(f"version:  {version} ({build})")
-    print(f"sha256:   {digest.hexdigest()}    (publish this next to the download)")
+    print(f"sha256:   {file_digest.hexdigest()}    (of the .bosupd - publish this next to the download)")
+    print(f"image:    {digest.hexdigest()}    (of the rootfs within it - what baseos-update verifies)")
     return 0
 
 
