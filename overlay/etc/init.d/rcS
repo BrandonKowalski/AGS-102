@@ -54,6 +54,72 @@ if ! /bin/mount -t ext4 -o rw,noatime /dev/mmcblk0p6 /data 2>/dev/null; then
 	/bin/mount -t tmpfs tmpfs /data
 fi
 
+# A charger boot is not a session, so end it here.
+#
+# The PMIC brings the rails up whenever VBUS appears. That is normal vendor
+# behaviour, not a fault, and U-Boot records the cause on the cmdline
+# (bootreason=charger, mirrored at axp2202-battery/boot_mode). Left alone it
+# runs all the way into the frontend, so plugging a powered-off handheld in to
+# charge left it awake for hours competing with its own charger —
+# knulli-cfw/distribution#287 is the same fault on an RG35XX SP. Powering off
+# again charges properly instead; POWER yields bootreason=button and a normal
+# boot with the cable still attached.
+#
+# Placed before `baseos-update boot-check` on purpose: a charger boot never
+# reaches a frontend session, so counting it as a failed trial boot would roll
+# back a perfectly good update on a device that merely gets charged often. It is
+# also ahead of the card mount, expand-storage and the frontend, so nothing is
+# mounted or written that a power cut could tear.
+#
+# Four preconditions, each guarding a way this could be worse than the fault:
+#
+#   * /data must be the real partition. On the tmpfs fallback nothing can be
+#     remembered between boots, and an unbounded loop beats a hung frontend.
+#   * /data/no-charger-off opts out entirely. This hardware cannot distinguish a
+#     host PC from a dumb charger — the driver publishes no usb_type and BC
+#     detection reads empty — so anyone who wants a cable-attached boot to come
+#     all the way up needs a switch, and this is it.
+#   * The RTC must give a usable time, since it is the only way to recognise a
+#     loop. No clock, no power off.
+#   * The previous auto-off must not have been seconds ago. If the PMIC write
+#     ever stops sticking, the next pass boots normally rather than cycling
+#     forever. Deliberate replugs are minutes apart and unaffected.
+CHARGER_LOOP_WINDOW=120
+if /bin/grep -q 'bootreason=charger' /proc/cmdline 2>/dev/null \
+	&& /bin/grep -q ' /data ext4 ' /proc/mounts \
+	&& [ ! -e /data/no-charger-off ] \
+	&& [ -x /usr/sbin/axp-off ]; then
+	charger_now="$(/bin/cat /sys/class/rtc/rtc0/since_epoch 2>/dev/null)"
+	charger_last="$(/bin/cat /data/charger-off-stamp 2>/dev/null)"
+	case "$charger_now" in ''|*[!0-9]*) charger_now=0 ;; esac
+	case "$charger_last" in ''|*[!0-9]*) charger_last=0 ;; esac
+	charger_log="$(/bin/cut -d' ' -f1 /proc/uptime) rtc=$charger_now last=$charger_last"
+
+	if [ "$charger_now" -eq 0 ]; then
+		echo "$charger_log no usable RTC, booting normally" >> /data/charger.log
+	elif [ "$charger_last" -gt 0 ] \
+		&& [ "$((charger_now - charger_last))" -lt "$CHARGER_LOOP_WINDOW" ]; then
+		echo "$charger_log inside loop window, booting normally" >> /data/charger.log
+	else
+		echo "$charger_log powering off to charge" >> /data/charger.log
+		echo "$charger_now" > /data/charger-off-stamp
+		/bin/sync
+		# Close /data before the rails drop. sync flushes the writes but leaves
+		# the filesystem marked in use, so cutting power here would replay the
+		# journal on every subsequent mount. Nothing else is mounted yet, which
+		# is the whole reason this branch sits where it does.
+		/bin/umount /data 2>/dev/null \
+			|| /bin/mount -o remount,ro /data 2>/dev/null
+		/usr/sbin/axp-off --now
+		# Only reached if the PMIC write failed. Put /data back before falling
+		# through, or the rest of this boot runs without its state partition.
+		# The stamp above means the next charger boot will not retry immediately.
+		/bin/mount -t ext4 -o rw,noatime /dev/mmcblk0p6 /data 2>/dev/null \
+			|| /bin/mount -o remount,rw /data 2>/dev/null
+		echo "$charger_log PMIC off did not take, continuing" >> /data/charger.log
+	fi
+fi
+
 # A freshly updated slot is on trial until a frontend session starts. Count the
 # boots that never got that far and restore the previous slot if this one
 # cannot. No-op unless an update is in its trial window.
