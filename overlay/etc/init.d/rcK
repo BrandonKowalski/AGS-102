@@ -64,9 +64,46 @@ log "    modules still loaded: $(/bin/cut -d' ' -f1 /proc/modules | tr '\n' ' ')
 if /bin/mountpoint -q "$CARD" 2>/dev/null; then
 	/bin/dmesg | /usr/bin/tail -25 >> "$LOG" 2>/dev/null
 fi
-log "=== rcK DONE $(/bin/date '+%Y-%m-%d %H:%M:%S') — handing back to init for reboot(RB_POWER_OFF)"
+log "=== rcK DONE $(/bin/date '+%Y-%m-%d %H:%M:%S') — teardown complete"
 
 /bin/dd if=/dev/urandom of=/data/random-seed bs=512 count=1 2>/dev/null
 /bin/sync
 echo s > /proc/sysrq-trigger 2>/dev/null
+
+# Last chance to say anything: the card is unmounted immediately below.
+if [ -e /run/poweroff-requested ]; then
+	log "    poweroff requested — cutting power at the PMIC after unmount"
+else
+	log "    no poweroff marker — reboot path, handing back to init"
+fi
+
+# Unmount the two filesystems carrying state, by name. `umount -a` cannot be
+# used ahead of the PMIC write below: it would take devtmpfs with it, and
+# /dev/i2c-5 has to outlive this step.
+/bin/umount /mnt/sdcard 2>/dev/null
+/bin/umount /data 2>/dev/null
+/bin/sync
+
+# Power off at the PMIC rather than returning to init for reboot(RB_POWER_OFF).
+# That path does not stay off while VBUS is present: the device is back in about
+# seven seconds reporting bootreason=charger, which turns an idle handheld on a
+# charger into a five-minute cycle as soon as the frontend's doze timeout fires.
+# Writing the PMU's own soft-poweroff bit does stay off — measured 5/5 on an
+# RG SP, from button and charger boots alike, with the card and both ext4
+# filesystems clean afterwards every time.
+#
+# Only on a poweroff. BusyBox init runs this single `::shutdown:` action for
+# reboot as well and gives no way to tell them apart, so /sbin/poweroff leaves a
+# marker and a reboot never does. Absent the marker we take the reboot path on
+# purpose: the two failures are not symmetric. A poweroff that falls through
+# merely restarts on the charger — the behaviour this OS already shipped — while
+# a reboot that powers off strands baseos-update after a slot flip, where the
+# trial-boot counter then rolls the update back.
+#
+# Execution ends inside axp-off. If the write fails it returns non-zero and the
+# umount below runs, handing back to init exactly as this script always did.
+if [ -e /run/poweroff-requested ] && [ -x /usr/sbin/axp-off ]; then
+	/usr/sbin/axp-off --now
+fi
+
 /bin/umount -a -r 2>/dev/null

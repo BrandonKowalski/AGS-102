@@ -8,6 +8,7 @@
 #   work/tools/gptgrow        (grow last GPT partition on first boot)
 #   work/tools/gptslot        (A/B root-slot geometry + flip for updates)
 #   work/tools/adbd           (Android adb daemon, USB-only, static)
+#   work/tools/axp-off        (cut power at the PMIC; rcK's last step)
 # Must use --platform linux/arm64 so the produced binaries are aarch64 for the
 # handheld (native on Apple Silicon; QEMU on Intel hosts).
 set -eu
@@ -63,6 +64,17 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   gcc -static -O2 $(pkg-config --cflags freetype2) -o /out/fbsplash /src/fbsplash.c \
     $(pkg-config --static --libs freetype2)
   strip /out/fbsplash
+'
+
+# axp-off: the shutdown primitive. The kernel's reboot(RB_POWER_OFF) does not
+# stay off on this board while VBUS is present — it comes back in ~7 s — so rcK
+# ends by writing the PMU's own soft-poweroff bit over i2c instead (see
+# src/axp-off.c). No libraries; it is one ioctl and one two-byte write.
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
+  -v "$TOOLS":/out -v "$HERE/src":/src:ro alpine:3.20 sh -euc '
+  apk add -q build-base linux-headers
+  gcc -static -O2 -Wall -Wextra -o /out/axp-off /src/axp-off.c
+  strip /out/axp-off
 '
 
 # gptgrow: zero-dependency static tool that grows the last GPT partition to
