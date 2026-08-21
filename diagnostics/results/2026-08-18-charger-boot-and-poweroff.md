@@ -69,12 +69,21 @@ before trusting it: `REG00[5]` (VBUS_GD) reads 1 with a charger attached;
 `REG22H[1]` reads 1 matching the device tree's `pmu_powkey_off_en = 1`; and
 `REG22H[0] = 0` predicts the long-press staying off, which it does.
 
-**REG 27H "Soft Poweroff configure"** (datasheet 6.15.2.26). This device reads
-**`0x08`**, against a POR default of `0x04` — *both* configurable bits inverted,
-and reprogrammed by vendor firmware on every boot (a runtime write does not
-survive a power cycle):
+**REG 27H "Soft Poweroff configure"** (datasheet 6.15.2.26), POR default `0x04`.
+Reprogrammed by vendor firmware on every boot (a runtime write does not survive a
+power cycle) — and, measured again on 2026-08-20, not always to the same value:
 
-| bit | function | default | this device |
+| boot | `bootreason` | REG27H |
+|---|---|---|
+| powered on with the POWER button | `button` | **`0x08`** |
+| after two reboots | `unknow` | **`0x00`** |
+
+Both reads on the same device, hours apart. `bootreason` tracked the value both
+times, which reads like a correlation — button boots inverting bit 3, reboots not
+— but it is one data point per boot type. **Not established.** The bit meanings
+below are the datasheet's; the "button boot" column is the `0x08` reading:
+
+| bit | function | default | button boot |
 |---|---|---|---|
 | 3 | PWROK pin pull low → restart the system | `0` disable | **`1` enabled** |
 | 2 | PWRON 16 s → shutdown the PMIC | `1` enable | **`0` disabled** |
@@ -100,7 +109,9 @@ the reasoning that produced them.
 non-default-enabled "pull PWROK low to restart" bit, with the rails collapsing at
 shutdown as the trigger. Cleared it over i2c and the device restarted anyway. It
 also reverted to `0x08` on the next boot, which is how we learned the register is
-reprogrammed every boot.
+reprogrammed every boot — and, per §3, not always to the same value: bit 3 has
+since been read both set and clear across boots, with `axp-off` preserving
+whichever it finds.
 
 **OTP power-on source (5) is not firing.** The datasheet lists "battery is
 charged to normal (VBAT>3.3 V and is charging)" as a power-on source, configurable

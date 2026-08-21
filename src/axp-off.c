@@ -18,10 +18,16 @@
  *   1   restart the system                        write 1 = restart   (RWAC)
  *   0   soft PWROFF                               write 1 = power off (RWAC)
  *
- * This board runs 27H = 0x08 — both configurable bits inverted from their
- * defaults by the vendor firmware, which reprograms the register on every boot.
- * Bit 3 was suspected of causing the restart and exonerated by measurement: the
- * device stays off with bit 3 left enabled, so this preserves it.
+ * 27H is not invariant on this board: measured twice on the same RG SP, a
+ * POWER-button boot read 0x08 — both configurable bits inverted from their
+ * defaults — and a later boot, after two reboots, read 0x00, back at default on
+ * bit 3 and still inverted on bit 2. Vendor firmware reprograms the register on
+ * every boot and evidently not always to the same value; the reading tracked
+ * bootreason both times, which looks like a correlation, but that is one data
+ * point per boot type and not established. Bit 3 was suspected of causing the
+ * restart and exonerated by measurement; it has since been seen both set and
+ * clear and the write handled both, so this preserves whatever it finds rather
+ * than assuming a value.
  *
  * rcK runs this last, after the frontend is stopped, the modules are unloaded
  * and /data and the card are unmounted. Nothing downstream of the write runs.
