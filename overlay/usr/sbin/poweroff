@@ -1,21 +1,5 @@
 #!/bin/sh
-# poweroff, with the intent recorded for rcK.
-#
-# BusyBox init runs the single `::shutdown:` action for both poweroff and
-# reboot, and gives the script no way to tell them apart. rcK has to know:
-# cutting power at the PMIC is right for a poweroff and wrong for a reboot,
-# where it would silently turn a restart into a shutdown and strand
-# baseos-update after a slot flip.
-#
-# So the requester leaves a marker and rcK reads it. The default — no marker —
-# is the reboot path, because the two failures are not symmetric: a poweroff
-# that falls through merely restarts on the charger, which is the behaviour
-# this OS shipped with, while a reboot that powers off eats system updates.
-#
-# /run is tmpfs, so the marker cannot survive a boot. A poweroff interrupted
-# part way through leaves nothing for the next reboot to inherit.
-#
-# This shadows the BusyBox applet of the same name; build-rootfs.sh removes
-# that symlink before the overlay is copied over it.
-: > /run/poweroff-requested
-exec /usr/bin/busybox poweroff "$@"
+# Compatibility shim. slot's Power::poweroff() reaches Command::new("poweroff"),
+# an execvp against init's PATH, so the fix has to live under the bare name.
+# The logic is in ags-poweroff.
+exec "${AGS_SBIN:-/usr/sbin}/ags-poweroff" "$@"

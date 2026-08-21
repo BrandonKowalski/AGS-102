@@ -82,11 +82,11 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   ln -sf libGLESv2.so.2 "$R/usr/lib/libGLESv2.so"
 
   ## 4. Our overlay wins over everything
-  # `busybox --install` symlinked /usr/sbin/poweroff at the busybox binary, and
-  # /sbin is itself a symlink to usr/sbin. Copying our shim onto that symlink
-  # would follow it and overwrite busybox, so drop it first — the same hazard
-  # the fbsplash applet has further down.
-  rm -f "$R/usr/sbin/poweroff"
+  # `busybox --install` symlinked /usr/sbin/poweroff and /usr/sbin/reboot at
+  # the busybox binary, and /sbin is itself a symlink to usr/sbin. Copying our
+  # shims onto those symlinks would follow them and overwrite busybox, so drop
+  # them first — the same hazard the fbsplash applet has further down.
+  rm -f "$R/usr/sbin/poweroff" "$R/usr/sbin/reboot"
   cp -R /overlay/. "$R/"
   # Target identity is generated here; the overlay contains no device-specific
   # model data. BASEOS_DEVICE is the frontend family, while BASEOS_TARGET is
@@ -120,6 +120,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
             "$R/usr/sbin/nextui-session" "$R/usr/sbin/systemctl" \
             "$R/usr/sbin/expand-storage" "$R/usr/sbin/baseos-update" \
             "$R/usr/sbin/boot-menu-held" "$R/usr/sbin/poweroff" \
+            "$R/usr/sbin/ags-poweroff" "$R/usr/sbin/ags-reboot" "$R/usr/sbin/reboot" \
             "$R/usr/sbin/usb-gadget-adb" "$R/usr/sbin/usb-storage-mode" \
             "$R/mnt/vendor/ctrl/setBluetooth.sh" \
             "$R/usr/share/udhcpc/default.script"
@@ -131,6 +132,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
            /usr/sbin/baseos-ntp /usr/sbin/baseos-ntp-notify \
            /usr/sbin/expand-storage /usr/sbin/baseos-update /usr/sbin/systemctl \
            /usr/sbin/boot-menu-held /usr/sbin/poweroff \
+           /usr/sbin/ags-poweroff /usr/sbin/ags-reboot /usr/sbin/reboot \
            /usr/sbin/usb-gadget-adb /usr/sbin/usb-storage-mode \
            /mnt/vendor/ctrl/setBluetooth.sh; do
     [ -x "$R$s" ] || { echo "FATAL: $s is not executable in rootfs"; exit 1; }

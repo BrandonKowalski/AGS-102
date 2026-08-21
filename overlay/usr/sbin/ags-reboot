@@ -1,0 +1,14 @@
+#!/bin/sh
+# Reboot, and clear the poweroff marker on the way out.
+#
+# rcK's default is already the reboot path, but only by absence: a poweroff
+# interrupted before init got to the shutdown action leaves a marker behind
+# that a reboot in the same session would inherit, and rcK would cut power at
+# the PMIC instead of restarting. Clearing it here makes that default an
+# assertion rather than a coincidence.
+MARKER="${AGS_POWEROFF_MARKER:-/run/poweroff-requested}"
+BUSYBOX="${AGS_BUSYBOX:-/usr/bin/busybox}"
+
+rm -f "$MARKER"
+
+exec "$BUSYBOX" reboot "$@"
